@@ -12,7 +12,7 @@ class SettingSeeder extends Seeder
         $settings = [
             [
                 'key' => 'app_name',
-                'value' => 'Durham',
+                'value' => 'Kawakib',
             ],
             [
                 'key' => 'app_version',

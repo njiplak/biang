@@ -30,13 +30,13 @@ export default function Login() {
 
     return (
         <AuthLayout
-            title="Log in to Durham React"
+            title="Log in to Kawakib"
             description="Enter your credentials to access the platform"
         >
             <Head title="Log in" />
 
             <div className="mx-auto flex h-full max-w-sm flex-col items-center justify-center gap-1">
-                <h1 className="mt-1 text-xl font-bold">Durham React</h1>
+                <h1 className="mt-1 text-xl font-bold">Kawakib</h1>
                 <p className="text-center text-sm text-muted-foreground">
                     Enter your email and password below <br />
                     to access the platform

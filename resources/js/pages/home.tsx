@@ -13,9 +13,9 @@ export default function Home() {
                 <header className="relative z-10 flex items-center justify-between px-8 py-6 lg:px-16">
                     <div className="flex items-center gap-2.5">
                         <div className="flex size-8 items-center justify-center rounded-md bg-foreground">
-                            <span className="text-sm font-bold tracking-tight text-background">D</span>
+                            <span className="text-sm font-bold tracking-tight text-background">K</span>
                         </div>
-                        <span className="text-lg font-semibold tracking-tight text-foreground">Durham</span>
+                        <span className="text-lg font-semibold tracking-tight text-foreground">Kawakib</span>
                     </div>
                     <Button asChild variant="outline" size="sm">
                         <Link href={login.url()}>Sign in</Link>
@@ -30,7 +30,7 @@ export default function Home() {
                         </p>
 
                         <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-                            Durham
+                            Kawakib
                         </h1>
 
                         <div className="mx-auto mt-4 h-px w-16 bg-foreground/20" />
@@ -70,7 +70,7 @@ export default function Home() {
                 <footer className="relative z-10 px-8 py-6 lg:px-16">
                     <div className="flex items-center justify-between">
                         <p className="text-xs text-muted-foreground">
-                            &copy; {new Date().getFullYear()} Durham. All rights reserved.
+                            &copy; {new Date().getFullYear()} Kawakib. All rights reserved.
                         </p>
                     </div>
                 </footer>

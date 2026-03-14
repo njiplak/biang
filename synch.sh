@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="/var/www/html/app"
-QUEUE_SERVICE="durham-queue-worker"
+QUEUE_SERVICE="kawakib-queue-worker"
 
 # Function to display an error message and exit
 error_exit() {
@@ -33,7 +33,7 @@ generate_service_unit() {
 
   cat <<EOF
 [Unit]
-Description=Durham Laravel Queue Worker
+Description=Kawakib Laravel Queue Worker
 After=network.target
 
 [Service]

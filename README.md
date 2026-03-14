@@ -1,8 +1,8 @@
-# Durham React - Culture & Creator Engine (MVP)
+# Kawakib - Basis
 
 ## Overview
 
-Durham React is an internal platform designed to help marketers and strategists stay on top of South African social culture. The platform monitors trending content from TikTok and Instagram, generates AI-powered content ideas, detects organic brand mentions, and tracks creator and asset performance.
+Kawakib - Basis is a Laravel starter kit for Kawakib MVP.
 
 ## Key Selling Points
 

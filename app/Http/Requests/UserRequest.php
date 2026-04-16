@@ -26,8 +26,7 @@ class UserRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($this->route('id'))],
             'password' => [$this->isMethod('POST') ? 'required' : 'nullable', 'string', 'min:8'],
-            'roles' => ['nullable', 'array'],
-            'roles.*' => ['integer', 'exists:roles,id'],
+            'role' => ['nullable', 'integer', 'exists:roles,id'],
         ];
     }
 }

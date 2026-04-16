@@ -8,12 +8,14 @@ use App\Contract\BaseContract;
 use App\Contract\Setting\PermissionContract;
 use App\Contract\Setting\RoleContract;
 use App\Contract\Setting\SettingContract;
+use App\Contract\Setting\UserContract;
 use App\Service\Auth\UserAuthService;
 use App\Service\AuthService;
 use App\Service\BaseService;
 use App\Service\Setting\PermissionService;
 use App\Service\Setting\RoleService;
 use App\Service\Setting\SettingService;
+use App\Service\Setting\UserService;
 use Illuminate\Support\ServiceProvider;
 
 class ContractProvider extends ServiceProvider
@@ -28,6 +30,7 @@ class ContractProvider extends ServiceProvider
         SettingContract::class => SettingService::class,
         RoleContract::class => RoleService::class,
         PermissionContract::class => PermissionService::class,
+        UserContract::class => UserService::class,
     ];
 
     public function register(): void

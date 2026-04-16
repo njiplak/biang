@@ -4,6 +4,7 @@ import {
     LayoutDashboard,
     LogOut,
     Settings,
+    Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -155,6 +156,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
                                         <Link href={backoffice.index.url()}>
                                             <LayoutDashboard />
                                             <span>Dashboard</span>
+                                        </Link>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton asChild isActive={isMenuActive(backoffice.setting.user.index.url())}>
+                                        <Link href={backoffice.setting.user.index.url()}>
+                                            <Users />
+                                            <span>Users</span>
                                         </Link>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>

@@ -6,7 +6,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ==========================================================================
+   Fluent 2 / Windows 11 theme, mapped onto shadcn token names.
+   Accent: Windows default blue (#0078D4 light, #60CDFF dark).
+   Radius: Fluent scale (3 / 4 / 8 / 12 / 16 / 20px).
+   ========================================================================== */
+
 @theme inline {
+  /* shadcn color contract */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -31,13 +38,6 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -46,82 +46,420 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Fluent additions: bg-control, border-stroke, text-success, etc. */
+  --color-layer: var(--layer);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
+  --color-control-pressed: var(--control-pressed);
+  --color-control-disabled: var(--control-disabled);
+  --color-subtle-hover: var(--subtle-hover);
+  --color-subtle-pressed: var(--subtle-pressed);
+  --color-stroke: var(--stroke-control);
+  --color-stroke-strong: var(--stroke-strong);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-pressed: var(--accent-pressed);
+  --color-text-disabled: var(--text-disabled);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  /* Fluent corner radii: 4px controls, 8px cards and flyouts */
+  --radius-sm: calc(var(--radius) * 0.375);
+  --radius-md: calc(var(--radius) * 0.5);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.5);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.5);
+
+  /* Segoe UI Variable on Windows, Inter elsewhere */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable Static Text",
+    "Segoe UI", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable Static Display",
+    "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, "JetBrains Mono",
+    Consolas, monospace;
+
+  /* Fluent elevation ramp: shadow-flyout, shadow-dialog, etc. */
+  --shadow-card: var(--elevation-2);
+  --shadow-raised: var(--elevation-4);
+  --shadow-tooltip: var(--elevation-8);
+  --shadow-flyout: var(--elevation-16);
+  --shadow-dialog: var(--elevation-28);
+  --shadow-window: var(--elevation-64);
+
+  /* Fluent motion */
+  --ease-fluent: cubic-bezier(0.33, 0, 0.67, 1);
+  --ease-fluent-decelerate: cubic-bezier(0.1, 0.9, 0.2, 1);
+  --ease-fluent-accelerate: cubic-bezier(0.9, 0.1, 1, 0.2);
+  --animate-duration-fast: 150ms;
+  --animate-duration-normal: 250ms;
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+
+  /* Solid Background Base + Layer (Mica base, card layer sits lighter) */
+  --background: oklch(0.964 0 0);
+  --foreground: oklch(0.222 0 0);
+  --layer: oklch(0.988 0 0);
+  --card: oklch(0.988 0 0);
+  --card-foreground: oklch(0.222 0 0);
+  --popover: oklch(0.982 0 0);
+  --popover-foreground: oklch(0.222 0 0);
+
+  /* Accent (#0078D4) */
+  --primary: oklch(0.568 0.167 251.4);
+  --primary-foreground: oklch(1 0 0);
+  --accent-hover: oklch(0.596 0.157 250);
+  --accent-pressed: oklch(0.638 0.132 248);
+
+  --secondary: oklch(0.946 0 0);
+  --secondary-foreground: oklch(0.222 0 0);
+  --muted: oklch(0.964 0 0);
+  --muted-foreground: oklch(0.478 0 0);
+  --accent: oklch(0.946 0 0);
+  --accent-foreground: oklch(0.222 0 0);
+
+  --destructive: oklch(0.536 0.191 30.1);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.523 0.154 142.5);
+  --warning: oklch(0.53 0.115 70);
+  --info: oklch(0.568 0.167 251.4);
+
+  /* Control fills (buttons, inputs, list rows) */
+  --control: oklch(0.994 0 0);
+  --control-hover: oklch(0.973 0 0);
+  --control-pressed: oklch(0.956 0 0);
+  --control-disabled: oklch(0.97 0 0);
+  --control-input-focus: oklch(1 0 0);
+  --subtle-hover: oklch(0.946 0 0);
+  --subtle-pressed: oklch(0.921 0 0);
+  --text-disabled: oklch(0.715 0 0);
+
+  /* Strokes: bottom edge is darker, this is the Fluent control signature */
+  --border: oklch(0.921 0 0);
+  --input: oklch(0.907 0 0);
+  --stroke-control: oklch(0.907 0 0);
+  --stroke-control-bottom: oklch(0.854 0 0);
+  --stroke-strong: oklch(0.633 0 0);
+  --stroke-input-underline: oklch(0.633 0 0);
+
+  /* Focus rectangle: dark outer, light inner */
+  --ring: oklch(0.222 0 0);
+  --focus-inner: oklch(1 0 0);
+
+  --chart-1: oklch(0.568 0.167 251.4);
+  --chart-2: oklch(0.552 0.091 194.5);
+  --chart-3: oklch(0.523 0.154 142.5);
+  --chart-4: oklch(0.588 0.168 42.4);
+  --chart-5: oklch(0.556 0.132 300.9);
+
+  /* Navigation pane sits on the Mica base, content layer floats above it */
+  --sidebar: oklch(0.964 0 0);
+  --sidebar-foreground: oklch(0.222 0 0);
+  --sidebar-primary: oklch(0.568 0.167 251.4);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.946 0 0);
+  --sidebar-accent-foreground: oklch(0.222 0 0);
+  --sidebar-border: oklch(0.921 0 0);
+  --sidebar-ring: oklch(0.222 0 0);
+
+  --elevation-2: 0 1px 2px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
+  --elevation-4: 0 2px 4px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
+  --elevation-8: 0 4px 8px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
+  --elevation-16: 0 8px 16px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
+  --elevation-28: 0 14px 28px oklch(0 0 0 / 0.24), 0 0 8px oklch(0 0 0 / 0.2);
+  --elevation-64: 0 32px 64px oklch(0 0 0 / 0.24), 0 0 8px oklch(0 0 0 / 0.2);
+
+  --acrylic-tint: oklch(0.982 0 0 / 0.72);
+  --scrollbar-thumb: oklch(0.633 0 0 / 0.6);
+  --scrollbar-thumb-hover: oklch(0.478 0 0 / 0.8);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.244 0 0);
+  --foreground: oklch(1 0 0);
+  --layer: oklch(0.289 0 0);
+  --card: oklch(0.289 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.294 0 0);
+  --popover-foreground: oklch(1 0 0);
+
+  /* Dark accent (#60CDFF) carries black text, as Windows 11 does */
+  --primary: oklch(0.804 0.122 230.7);
+  --primary-foreground: oklch(0.15 0 0);
+  --accent-hover: oklch(0.76 0.115 231);
+  --accent-pressed: oklch(0.715 0.105 231);
+
+  --secondary: oklch(0.317 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.273 0 0);
+  --muted-foreground: oklch(0.847 0 0);
+  --accent: oklch(0.301 0 0);
+  --accent-foreground: oklch(1 0 0);
+
+  --destructive: oklch(0.791 0.123 13.3);
+  --destructive-foreground: oklch(0.15 0 0);
+  --success: oklch(0.79 0.16 145);
+  --warning: oklch(0.82 0.15 82);
+  --info: oklch(0.804 0.122 230.7);
+
+  --control: oklch(0.301 0 0);
+  --control-hover: oklch(0.321 0 0);
+  --control-pressed: oklch(0.286 0 0);
+  --control-disabled: oklch(0.28 0 0);
+  --control-input-focus: oklch(0.222 0 0);
+  --subtle-hover: oklch(1 0 0 / 6%);
+  --subtle-pressed: oklch(1 0 0 / 4%);
+  --text-disabled: oklch(1 0 0 / 36%);
+
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --stroke-control: oklch(1 0 0 / 9%);
+  --stroke-control-bottom: oklch(0 0 0 / 20%);
+  --stroke-strong: oklch(1 0 0 / 45%);
+  --stroke-input-underline: oklch(1 0 0 / 54%);
+
+  --ring: oklch(1 0 0);
+  --focus-inner: oklch(0 0 0);
+
+  --chart-1: oklch(0.804 0.122 230.7);
+  --chart-2: oklch(0.79 0.11 180);
+  --chart-3: oklch(0.75 0.13 295);
+  --chart-4: oklch(0.82 0.17 80);
+  --chart-5: oklch(0.78 0.16 340);
+
+  --sidebar: oklch(0.244 0 0);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.804 0.122 230.7);
+  --sidebar-primary-foreground: oklch(0.15 0 0);
+  --sidebar-accent: oklch(0.301 0 0);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(1 0 0);
+
+  --elevation-2: 0 1px 2px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
+  --elevation-4: 0 2px 4px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
+  --elevation-8: 0 4px 8px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
+  --elevation-16: 0 8px 16px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
+  --elevation-28: 0 14px 28px oklch(0 0 0 / 0.37), 0 0 8px oklch(0 0 0 / 0.28);
+  --elevation-64: 0 32px 64px oklch(0 0 0 / 0.37), 0 0 8px oklch(0 0 0 / 0.28);
+
+  --acrylic-tint: oklch(0.25 0 0 / 0.78);
+  --scrollbar-thumb: oklch(1 0 0 / 0.4);
+  --scrollbar-thumb-hover: oklch(1 0 0 / 0.6);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    /* Mica: a faint accent wash bleeding down from the top of the window */
+    background-image: radial-gradient(
+      130% 90% at 50% 0%,
+      color-mix(in oklab, var(--primary) 6%, transparent) 0%,
+      transparent 62%
+    );
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 600; /* Fluent titles are Semibold, never Bold */
+    letter-spacing: -0.01em;
+  }
+
+  /* Windows 11 focus rectangle: 2px outer high-contrast ring, 1px inner */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--focus-inner);
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 32%, transparent);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 5px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+    border-width: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Card / content layer floating above the Mica base */
+  .fluent-surface {
+    background-color: var(--layer);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-2);
+  }
+
+  /* Standard button: near-white fill, darker bottom stroke, quiet hover */
+  .fluent-control {
+    background-color: var(--control);
+    color: var(--foreground);
+    border: 1px solid var(--stroke-control);
+    border-bottom-color: var(--stroke-control-bottom);
+    border-radius: var(--radius-md);
+    transition: background-color 150ms var(--ease-fluent),
+      border-color 150ms var(--ease-fluent);
+  }
+  .fluent-control:hover {
+    background-color: var(--control-hover);
+  }
+  .fluent-control:active {
+    background-color: var(--control-pressed);
+    border-bottom-color: var(--stroke-control);
+    color: var(--muted-foreground);
+  }
+  .fluent-control:disabled,
+  .fluent-control[aria-disabled="true"] {
+    background-color: var(--control-disabled);
+    color: var(--text-disabled);
+    border-color: var(--border);
+  }
+
+  /* Accent button: Fluent fades the fill rather than darkening it */
+  .fluent-control-accent {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    border: 1px solid transparent;
+    border-bottom-color: color-mix(in oklab, black 22%, transparent);
+    border-radius: var(--radius-md);
+    transition: background-color 150ms var(--ease-fluent);
+  }
+  .fluent-control-accent:hover {
+    background-color: var(--accent-hover);
+  }
+  .fluent-control-accent:active {
+    background-color: var(--accent-pressed);
+    border-bottom-color: transparent;
+  }
+
+  /* Subtle button: no chrome until you touch it */
+  .fluent-control-subtle {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    transition: background-color 150ms var(--ease-fluent);
+  }
+  .fluent-control-subtle:hover {
+    background-color: var(--subtle-hover);
+  }
+  .fluent-control-subtle:active {
+    background-color: var(--subtle-pressed);
+  }
+
+  /* Text field: 1px underline that grows into a 2px accent bar on focus */
+  .fluent-input {
+    background-color: var(--control);
+    border: 1px solid var(--stroke-control);
+    border-radius: var(--radius-md);
+    box-shadow: inset 0 -1px 0 0 var(--stroke-input-underline);
+    transition: background-color 150ms var(--ease-fluent),
+      box-shadow 150ms var(--ease-fluent-decelerate);
+  }
+  .fluent-input:hover {
+    background-color: var(--control-hover);
+  }
+  .fluent-input:focus,
+  .fluent-input:focus-within {
+    background-color: var(--control-input-focus);
+    box-shadow: inset 0 -2px 0 0 var(--primary);
+    outline: none;
+  }
+  .fluent-input::placeholder {
+    color: var(--muted-foreground);
+  }
+
+  /* Flyouts, menus, command bars */
+  .fluent-acrylic {
+    background-color: var(--acrylic-tint);
+    backdrop-filter: blur(30px) saturate(125%);
+    -webkit-backdrop-filter: blur(30px) saturate(125%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-16);
+  }
+
+  /* Nav pane item with the sliding accent pill */
+  .fluent-nav-item {
+    position: relative;
+    border-radius: var(--radius-md);
+    transition: background-color 150ms var(--ease-fluent);
+  }
+  .fluent-nav-item:hover {
+    background-color: var(--subtle-hover);
+  }
+  .fluent-nav-item[aria-current],
+  .fluent-nav-item[data-active="true"] {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-accent-foreground);
+  }
+  .fluent-nav-item[aria-current]::before,
+  .fluent-nav-item[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 55%;
+    width: 3px;
+    border-radius: 9999px;
+    background-color: var(--primary);
+    transform: translateY(-50%);
+    animation: fluent-pill 250ms var(--ease-fluent-decelerate);
+  }
+
+  @keyframes fluent-pill {
+    from { height: 0; opacity: 0; }
+    to { height: 55%; opacity: 1; }
+  }
+}
+
+@layer utilities {
+  /* Windows 11 type ramp */
+  .type-caption { font-size: 0.75rem; line-height: 1rem; }
+  .type-body { font-size: 0.875rem; line-height: 1.25rem; }
+  .type-body-strong { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
+  .type-body-large { font-size: 1rem; line-height: 1.5rem; }
+  .type-subtitle { font-family: var(--font-display); font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; }
+  .type-title { font-family: var(--font-display); font-size: 1.75rem; line-height: 2.25rem; font-weight: 600; }
+  .type-title-large { font-family: var(--font-display); font-size: 2.5rem; line-height: 3rem; font-weight: 600; }
+  .type-display { font-family: var(--font-display); font-size: 4.25rem; line-height: 5rem; font-weight: 600; }
+
+  /* Control stroke on any element that already has a border */
+  .stroke-control-bottom { border-bottom-color: var(--stroke-control-bottom); }
 }

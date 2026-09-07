@@ -51,7 +51,12 @@ export default function CatalogIndex({
 
             <div className="flex flex-col gap-4">
                 {plans.map((plan) => (
-                    <PlanCard key={plan.id} plan={plan} features={features} addons={addons} />
+                    <PlanCard
+                        key={plan.id}
+                        plan={plan}
+                        features={features}
+                        addons={addons}
+                    />
                 ))}
             </div>
 
@@ -62,7 +67,11 @@ export default function CatalogIndex({
 
             <div className="grid gap-4 lg:grid-cols-2">
                 {addons.map((addon) => (
-                    <AddonCard key={addon.id} addon={addon} features={features} />
+                    <AddonCard
+                        key={addon.id}
+                        addon={addon}
+                        features={features}
+                    />
                 ))}
                 {addons.length === 0 && (
                     <p className="text-sm text-muted-foreground">
@@ -94,8 +103,12 @@ function PlanCard({
                         <span className="text-xs font-normal text-muted-foreground">
                             {plan.code}
                         </span>
-                        {plan.is_free && <Badge variant="secondary">Free tier</Badge>}
-                        {plan.is_archived && <Badge variant="outline">Retired</Badge>}
+                        {plan.is_free && (
+                            <Badge variant="secondary">Free tier</Badge>
+                        )}
+                        {plan.is_archived && (
+                            <Badge variant="outline">Retired</Badge>
+                        )}
                         {!plan.is_public && !plan.is_archived && (
                             <Badge variant="outline">Hidden</Badge>
                         )}
@@ -203,28 +216,51 @@ function PlanCard({
                                     className={
                                         price.is_archived
                                             ? 'text-muted-foreground line-through'
-                                            : ''
+                                            : 'flex items-center gap-2'
                                     }
                                 >
                                     {money(price)}
+                                    {!price.is_archived && (
+                                        <SellableBadge price={price} />
+                                    )}
                                 </span>
                                 {!price.is_archived && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() =>
-                                            router.delete(
-                                                admin.catalog.plan.price.archive(
-                                                    {
-                                                        plan: plan.id,
-                                                        price: price.id,
-                                                    },
-                                                ).url,
-                                            )
-                                        }
-                                    >
-                                        Archive
-                                    </Button>
+                                    <span className="flex items-center gap-1">
+                                        {!price.is_published && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() =>
+                                                    router.post(
+                                                        admin.catalog.plan.price.publish(
+                                                            {
+                                                                plan: plan.id,
+                                                                price: price.id,
+                                                            },
+                                                        ).url,
+                                                    )
+                                                }
+                                            >
+                                                Publish
+                                            </Button>
+                                        )}
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                                router.delete(
+                                                    admin.catalog.plan.price.archive(
+                                                        {
+                                                            plan: plan.id,
+                                                            price: price.id,
+                                                        },
+                                                    ).url,
+                                                )
+                                            }
+                                        >
+                                            Archive
+                                        </Button>
+                                    </span>
                                 )}
                             </li>
                         ))}
@@ -454,16 +490,58 @@ function AddonCard({
                             className={
                                 price.is_archived
                                     ? 'text-muted-foreground line-through'
-                                    : ''
+                                    : 'flex items-center justify-between gap-3'
                             }
                         >
-                            {money(price)}
+                            <span className="flex items-center gap-2">
+                                {money(price)}
+                                {!price.is_archived && (
+                                    <SellableBadge price={price} />
+                                )}
+                            </span>
+                            {!price.is_archived && !price.is_published && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                        router.post(
+                                            admin.catalog.addon.price.publish({
+                                                addon: addon.id,
+                                                price: price.id,
+                                            }).url,
+                                        )
+                                    }
+                                >
+                                    Publish
+                                </Button>
+                            )}
                         </li>
                     ))}
                 </ul>
                 <PriceDialog addon={addon} />
             </CardContent>
         </Card>
+    );
+}
+
+/**
+ * Section 10: a price only sells once Dodo has a product for it. Saved and
+ * on-sale are different states, and staff have to be able to see which one a
+ * price is in - otherwise the first anyone hears about it is a customer whose
+ * checkout refused.
+ */
+function SellableBadge({ price }: { price: CatalogPrice }) {
+    if (price.is_published) {
+        return null;
+    }
+
+    return (
+        <Badge
+            variant="outline"
+            className="border-amber-500/40 text-amber-700 dark:text-amber-400"
+        >
+            Not on sale
+        </Badge>
     );
 }
 

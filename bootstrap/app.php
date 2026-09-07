@@ -60,6 +60,18 @@ return Application::configure(basePath: dirname(__DIR__))
             ->monitorName('convert-trials')
             ->graceTimeInMinutes(90);
 
+        /*
+         * Section 9: "Renewal fails → Email + banner." Hourly, not daily,
+         * because this is what sends that first email - a customer who learns
+         * about a declined card a day late has spent a day of their own grace
+         * window not knowing. The escalations it also sends land on day
+         * boundaries regardless of how often it runs.
+         */
+        $schedule->command('billing:dunning-reminders')
+            ->hourly()
+            ->monitorName('dunning-reminders')
+            ->graceTimeInMinutes(90);
+
         $schedule->command('billing:expire-grace')
             ->dailyAt('02:00')
             ->monitorName('expire-grace');

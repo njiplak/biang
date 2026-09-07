@@ -155,14 +155,26 @@ it('lifts the hard block when the bought seat covers the overage', function () {
     expect($this->workspace->fresh()->canWrite())->toBeTrue();
 });
 
+/*
+ * Attached to SEATS rather than a spare feature key because SubscriptionService
+ * now refuses to sell an add-on whose feature nothing meters, and seats is the
+ * only measured key (Features::MEASURED). What is being asserted is unchanged:
+ * an unlock resolves to a flat 1, never quantity x grant_per_unit.
+ */
 it('treats an unlock add-on as a switch rather than a quantity', function () {
     subscribe();
-    $feature = Feature::firstWhere('key', 'projects');
-    $unlock = Addon::factory()->create(['key' => 'premium-reports', 'kind' => AddonKind::Unlock, 'feature_id' => $feature->id]);
+    $feature = Feature::firstWhere('key', Features::SEATS);
+    $unlock = Addon::factory()->create([
+        'key' => 'premium-reports',
+        'kind' => AddonKind::Unlock,
+        'feature_id' => $feature->id,
+        'grant_per_unit' => 10,
+    ]);
     $price = AddonPrice::factory()->for($unlock)->create();
     $this->starter->addons()->attach($unlock);
 
-    $this->service->purchaseAddon($this->workspace, $price, 1);
+    // Asked for three of something that is on or off.
+    $this->service->purchaseAddon($this->workspace, $price, 3);
 
-    expect($this->entitlements->limitFor($this->workspace, 'projects'))->toBe(1);
+    expect($this->entitlements->limitFor($this->workspace, Features::SEATS))->toBe(1);
 });

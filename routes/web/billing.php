@@ -8,16 +8,38 @@ use Illuminate\Support\Facades\Route;
 // these routes could not be blocked.
 Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () {
     Route::get('/', [BillingController::class, 'index'])->name('index');
-    Route::post('trial', [BillingController::class, 'startTrial'])->name('trial');
+
+    /*
+     * `verified` from here down. Section 5 Path B is explicit that verification
+     * comes before the card, and section 12 sells one trial per PERSON, ever -
+     * a rule that means nothing while the person is only an unproved address.
+     *
+     * Reading the page is deliberately not gated: section 11 carries a chosen
+     * plan through signup, and bouncing someone off the page they were sent to
+     * loses the plan they picked. Nor is cancelling - never block the exit.
+     */
+    Route::post('trial', [BillingController::class, 'startTrial'])->middleware('verified')->name('trial');
 
     // Section 8: the card form belongs to Dodo. This only hands the customer
     // over; nothing about our state moves until their webhook arrives.
-    Route::post('checkout', [BillingController::class, 'checkout'])->name('checkout');
-    Route::put('plan', [BillingController::class, 'changePlan'])->name('plan');
+    Route::post('checkout', [BillingController::class, 'checkout'])->middleware('verified')->name('checkout');
+
+    /*
+     * Section 5: "open the payment provider's page for cards and invoices."
+     * Section 9 leans on it - the past-due banner tells the customer to update
+     * their card, and this is the only door to it.
+     *
+     * A route rather than a URL in the page payload, because the link is
+     * one-time and short-lived: minting one on every render would put a call to
+     * Dodo in the way of a page that has to work when they are down.
+     */
+    Route::get('portal', [BillingController::class, 'portal'])->name('portal');
+
+    Route::put('plan', [BillingController::class, 'changePlan'])->middleware('verified')->name('plan');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
 
     // Section 4's three add-on kinds. Entitlements move now; money follows in
     // phase 4, when Dodo becomes the merchant of record for the charge.
-    Route::post('addons', [BillingController::class, 'purchaseAddon'])->name('addon.store');
-    Route::put('addons', [BillingController::class, 'changeAddonQuantity'])->name('addon.update');
+    Route::post('addons', [BillingController::class, 'purchaseAddon'])->middleware('verified')->name('addon.store');
+    Route::put('addons', [BillingController::class, 'changeAddonQuantity'])->middleware('verified')->name('addon.update');
 });

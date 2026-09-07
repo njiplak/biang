@@ -4,6 +4,7 @@ namespace App\Service\Billing;
 
 use App\Contract\Billing\UsageContract;
 use App\Enums\FeatureAggregation;
+use App\Jobs\ReportUsageToProvider;
 use App\Models\Feature;
 use App\Models\UsageCounter;
 use App\Models\UsageRecord;
@@ -52,7 +53,7 @@ class UsageService implements UsageContract
                 return;
             }
 
-            UsageRecord::withoutWorkspaceScope()->create([
+            $record = UsageRecord::withoutWorkspaceScope()->create([
                 'workspace_id' => $workspace->id,
                 'feature_key' => $featureKey,
                 'quantity' => $quantity,
@@ -63,6 +64,17 @@ class UsageService implements UsageContract
 
             $counter = $this->counterFor($workspace, $featureKey);
             $counter->update(['used' => max(0, $counter->used + $quantity)]);
+
+            /*
+             * Section 4: a metered add-on is "billed on actual consumption",
+             * and this row is the only record that the consumption happened.
+             *
+             * afterCommit, so a rolled-back transaction cannot bill a customer
+             * for usage we did not keep. Queued, so nothing a customer is
+             * waiting on depends on Dodo being reachable - and section 7's hard
+             * block runs off the counter above, which has already moved.
+             */
+            ReportUsageToProvider::dispatch($record->id)->afterCommit();
         });
     }
 

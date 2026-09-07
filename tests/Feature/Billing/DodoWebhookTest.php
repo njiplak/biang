@@ -316,3 +316,232 @@ it('rejects a malformed body that still carries a valid signature', function () 
         'HTTP_WEBHOOK_SIGNATURE' => $signature,
     ], $payload)->assertStatus(400);
 });
+
+// -------------------------------------------------------- the customer's id
+
+/*
+ * Section 5 promises a link to "the payment provider's page for cards and
+ * invoices", and section 9's past-due banner sends the customer there to fix
+ * the card. Both need a customer id, and we never mint one - we hand Dodo an
+ * email at checkout and they create it. This event is the only place it
+ * reaches us.
+ */
+it('adopts the provider customer id the first time it sees one', function () {
+    expect($this->workspace->fresh()->dodo_customer_id)->toBeNull();
+
+    ($this->send)(($this->event)('subscription.active', [
+        'customer' => ['customer_id' => 'cus_dodo_1', 'email' => 'owner@acme.test', 'name' => 'Owner'],
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    expect($this->workspace->fresh()->dodo_customer_id)->toBe('cus_dodo_1');
+});
+
+// The column is unique. A different id arriving for a workspace that already
+// has one means something is wrong upstream, and adopting it would swap a
+// working portal link for a stranger's.
+it('never replaces a customer id it already has', function () {
+    $this->workspace->update(['dodo_customer_id' => 'cus_dodo_1']);
+
+    ($this->send)(($this->event)('subscription.renewed', [
+        'customer' => ['customer_id' => 'cus_someone_else'],
+    ]))->assertOk();
+
+    expect($this->workspace->fresh()->dodo_customer_id)->toBe('cus_dodo_1');
+});
+
+// An event that carries no customer block must not blank the one we have.
+it('leaves the customer id alone when an event does not carry one', function () {
+    $this->workspace->update(['dodo_customer_id' => 'cus_dodo_1']);
+
+    ($this->send)(($this->event)('subscription.renewed'))->assertOk();
+
+    expect($this->workspace->fresh()->dodo_customer_id)->toBe('cus_dodo_1');
+});
+
+/*
+ * The customer id is read on EVERY event, including the types the reconciler
+ * deliberately ignores. A closed workspace is soft-deleted, so the relation
+ * resolves to null - and a 500 here is not a dropped event, it is Dodo
+ * redelivering the same one until someone notices.
+ */
+it('survives an unhandled event for a workspace that has been closed', function () {
+    $this->workspace->delete();
+
+    ($this->send)(($this->event)('dispute.opened', [
+        'customer' => ['customer_id' => 'cus_dodo_1'],
+    ]))->assertOk();
+});
+
+// ------------------------------------------------------------ the free days
+
+/*
+ * Section 4: "A card is required to start ... At the end of day 14 it charges
+ * automatically." Dodo has no `trialing` status - a subscription in its free
+ * days is `active` with trial_period_days set and nothing billed yet - so the
+ * discriminator is previous_billing_date, which is null until the first charge.
+ */
+it('records a card-backed trial as trialing rather than paid', function () {
+    ($this->send)(($this->event)('subscription.active', [
+        'trial_period_days' => 14,
+        // Always present in a real payload, trial or not - which is exactly why
+        // it cannot be what tells the two apart.
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addDays(14)->toIso8601String(),
+    ]))->assertOk();
+
+    $subscription = $this->subscription->fresh();
+
+    expect($subscription->status)->toBe(SubscriptionStatus::Trialing)
+        ->and($subscription->billing_source)->toBe(BillingSource::Dodo)
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Trialing)
+        ->and($subscription->trial_ends_at->toDateString())->toBe(now()->addDays(14)->toDateString());
+});
+
+// Section 12: "one trial per person, ever" - the person who STARTED it, whose
+// id rides in the checkout metadata because the webhook has no session.
+it('spends the trial of the person who started it', function () {
+    ($this->send)(($this->event)('subscription.active', [
+        'trial_period_days' => 14,
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addDays(14)->toIso8601String(),
+        'metadata' => ['started_by_user_id' => (string) $this->owner->id],
+    ]))->assertOk();
+
+    expect($this->owner->fresh()->hasConsumedTrial())->toBeTrue()
+        ->and($this->owner->fresh()->trial_consumed_workspace_id)->toBe($this->workspace->id);
+});
+
+/*
+ * The day-15 charge. What ends a trial is MONEY, not a date or a field on the
+ * subscription - so the payment event is the one that converts it.
+ *
+ * This originally tested previous_billing_date being newly set, which their
+ * sandbox showed is populated from the moment a subscription exists, trial or
+ * not. That test passed only because it omitted a field every real webhook
+ * carries.
+ */
+it('turns the trial into a paid subscription when the charge lands', function () {
+    $this->subscription->update(['status' => SubscriptionStatus::Trialing]);
+
+    ($this->send)(($this->event)('payment.succeeded', [
+        'payment_id' => 'pay_first_charge',
+        'total_amount' => 4900,
+        'currency' => 'USD',
+    ]))->assertOk();
+
+    ($this->send)(($this->event)('subscription.renewed', [
+        'trial_period_days' => 14,
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Active)
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+/*
+ * Section 8: "Webhooks arrive out of order and more than once." If the renewal
+ * notification overtakes the payment, the subscription is still trialing at the
+ * moment it is processed - and the payment landing afterwards has to correct
+ * it, or a paying customer stays marked as on trial forever.
+ */
+it('converts the trial even when the renewal overtakes the payment', function () {
+    $this->subscription->update(['status' => SubscriptionStatus::Trialing]);
+
+    ($this->send)(($this->event)('subscription.renewed', [
+        'trial_period_days' => 14,
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Trialing);
+
+    ($this->send)(($this->event)('payment.succeeded', [
+        'payment_id' => 'pay_late',
+        'total_amount' => 4900,
+        'currency' => 'USD',
+    ]))->assertOk();
+
+    expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Active)
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+/*
+ * A zero-value payment must not end a trial. A nil authorisation at trial start
+ * is not the customer paying for anything, and counting it would convert them
+ * on day one - the exact charge section 4 promises to warn about first.
+ */
+it('does not end a trial on a zero-value payment', function () {
+    $this->subscription->update(['status' => SubscriptionStatus::Trialing]);
+
+    ($this->send)(($this->event)('payment.succeeded', [
+        'payment_id' => 'pay_zero',
+        'total_amount' => 0,
+        'currency' => 'USD',
+    ]))->assertOk();
+
+    expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Trialing);
+});
+
+// A trial someone already spent must not be re-spent on a second workspace.
+it('never gives back a trial that was already used', function () {
+    $this->owner->update([
+        'trial_consumed_at' => now()->subYear(),
+        'trial_consumed_workspace_id' => $this->workspace->id,
+    ]);
+    $consumedAt = $this->owner->fresh()->trial_consumed_at;
+
+    ($this->send)(($this->event)('subscription.active', [
+        'trial_period_days' => 14,
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addDays(14)->toIso8601String(),
+        'metadata' => ['started_by_user_id' => (string) $this->owner->id],
+    ]))->assertOk();
+
+    expect($this->owner->fresh()->trial_consumed_at->toIso8601String())
+        ->toBe($consumedAt->toIso8601String());
+});
+
+// A plain purchase with no free days is not a trial, whatever else it carries.
+it('treats a purchase with no free days as paid straight away', function () {
+    ($this->send)(($this->event)('subscription.active', [
+        'trial_period_days' => 0,
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Active)
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+/*
+ * Section 15: "Trial to paid conversion - the number this whole build exists to
+ * move." RevenueService derives it as `trial_ends_at` set AND status active,
+ * a shape nothing but a converted trial produces.
+ *
+ * So the conversion path must LEAVE trial_ends_at in place. Clearing it on the
+ * charge would silently zero the headline metric while everything still worked.
+ */
+it('keeps a converted trial countable as a conversion', function () {
+    $this->subscription->update([
+        'status' => SubscriptionStatus::Trialing,
+        'trial_ends_at' => now()->subDay(),
+    ]);
+
+    ($this->send)(($this->event)('payment.succeeded', [
+        'payment_id' => 'pay_conversion',
+        'total_amount' => 4900,
+        'currency' => 'USD',
+    ]))->assertOk();
+
+    ($this->send)(($this->event)('subscription.renewed', [
+        'trial_period_days' => 14,
+        'previous_billing_date' => now()->toIso8601String(),
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    $subscription = $this->subscription->fresh();
+
+    expect($subscription->status)->toBe(SubscriptionStatus::Active)
+        ->and($subscription->trial_ends_at)->not->toBeNull();
+});

@@ -16,7 +16,7 @@ class AddonPrice extends Model
 
     protected $fillable = [
         'ulid', 'addon_id', 'billing_interval', 'currency',
-        'amount_minor', 'dodo_product_id', 'archived_at',
+        'amount_minor', 'dodo_product_id', 'dodo_addon_id', 'archived_at',
     ];
 
     protected function casts(): array

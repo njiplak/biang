@@ -285,12 +285,20 @@ class CatalogService implements CatalogContract
                 'value' => $feature->pivot->value === null ? null : (int) $feature->pivot->value,
                 'is_measured' => Features::isMeasured($feature->key),
             ])->values()->all(),
+            /*
+             * Section 10: staff change what we sell without an engineer, and
+             * `is_published` is what makes that honest. A price with no product
+             * behind it at Dodo cannot be bought, and a catalogue screen that
+             * showed it the same as any other would be showing a price that is
+             * on the pricing page and refuses at checkout.
+             */
             'prices' => $plan->prices->map(fn (PlanPrice $price) => [
                 'id' => $price->id,
                 'interval' => $price->billing_interval->value,
                 'currency' => $price->currency,
                 'amount_minor' => $price->amount_minor,
                 'is_archived' => $price->archived_at !== null,
+                'is_published' => filled($price->dodo_product_id),
             ])->values()->all(),
             'addon_ids' => $plan->addons->pluck('id')->all(),
         ];
@@ -309,12 +317,15 @@ class CatalogService implements CatalogContract
             'grant_per_unit' => $addon->grant_per_unit,
             'max_quantity' => $addon->max_quantity,
             'is_archived' => $addon->archived_at !== null,
+            // An add-on is published as an ADD-ON at Dodo, not a product, so
+            // its id lives in a different column - see the migration.
             'prices' => $addon->prices->map(fn (AddonPrice $price) => [
                 'id' => $price->id,
                 'interval' => $price->billing_interval->value,
                 'currency' => $price->currency,
                 'amount_minor' => $price->amount_minor,
                 'is_archived' => $price->archived_at !== null,
+                'is_published' => filled($price->dodo_addon_id),
             ])->values()->all(),
         ];
     }

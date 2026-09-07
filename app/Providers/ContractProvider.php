@@ -18,6 +18,7 @@ use App\Contract\Auth\UserAuthContract;
 use App\Contract\AuthContract;
 use App\Contract\BaseContract;
 use App\Contract\Billing\BillingNotifierContract;
+use App\Contract\Billing\CatalogPublisherContract;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\ReconcilerContract;
@@ -49,6 +50,7 @@ use App\Service\Auth\UserAuthService;
 use App\Service\AuthService;
 use App\Service\BaseService;
 use App\Service\Billing\BillingNotifier;
+use App\Service\Billing\CatalogPublisher;
 use App\Service\Billing\DodoPaymentGateway;
 use App\Service\Billing\DodoReconciler;
 use App\Service\Billing\EntitlementService;
@@ -97,6 +99,8 @@ class ContractProvider extends ServiceProvider
         WebhookVerifierContract::class => StandardWebhookVerifier::class,
         ReconcilerContract::class => DodoReconciler::class,
         PaymentGatewayContract::class => DodoPaymentGateway::class,
+        // Section 10: a price is only sellable once it exists at Dodo too.
+        CatalogPublisherContract::class => CatalogPublisher::class,
 
         // Workspace
         WorkspaceContract::class => WorkspaceService::class,

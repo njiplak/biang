@@ -53,6 +53,14 @@ Route::prefix('admin')->as('admin.')->group(function () {
             Route::put('plans/{plan}/features', [CatalogController::class, 'syncFeatures'])->name('plan.features');
             Route::put('plans/{plan}/addons', [CatalogController::class, 'syncPlanAddons'])->name('plan.addons');
             Route::post('plans/{plan}/prices', [CatalogController::class, 'storePlanPrice'])->name('plan.price.store');
+            /*
+             * Section 10: publishing to Dodo is a call to somebody else's
+             * system and can fail while our own save succeeded, so retrying it
+             * has to be an action staff can take - otherwise an unsellable
+             * price needs a deploy to fix, which is the thing this section
+             * exists to avoid.
+             */
+            Route::post('plans/{plan}/prices/{price}/publish', [CatalogController::class, 'publishPlanPrice'])->name('plan.price.publish');
             Route::delete('plans/{plan}/prices/{price}', [CatalogController::class, 'archivePlanPrice'])->name('plan.price.archive');
             Route::delete('plans/{plan}', [CatalogController::class, 'archivePlan'])->name('plan.archive');
             Route::post('plans/{plan}/restore', [CatalogController::class, 'restorePlan'])->name('plan.restore');
@@ -60,6 +68,7 @@ Route::prefix('admin')->as('admin.')->group(function () {
             Route::post('addons', [CatalogController::class, 'storeAddon'])->name('addon.store');
             Route::put('addons/{addon}', [CatalogController::class, 'updateAddon'])->name('addon.update');
             Route::post('addons/{addon}/prices', [CatalogController::class, 'storeAddonPrice'])->name('addon.price.store');
+            Route::post('addons/{addon}/prices/{price}/publish', [CatalogController::class, 'publishAddonPrice'])->name('addon.price.publish');
             Route::delete('addons/{addon}', [CatalogController::class, 'archiveAddon'])->name('addon.archive');
         });
 

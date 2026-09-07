@@ -25,6 +25,22 @@ beforeEach(function () {
     $this->seed(PlanSeeder::class);
 });
 
+/*
+ * Section 5: verification sits BETWEEN signing up and naming a workspace, in
+ * both Path A and Path B. These tests are about the plan surviving that
+ * journey, so they have to actually take the step the customer takes.
+ */
+function verifyLatestSignup(): void
+{
+    User::query()->latest('id')->firstOrFail()->markEmailAsVerified();
+
+    // The guard resolved this user on the signup request and holds that
+    // instance for the rest of the test process, so without this the next
+    // request still sees the unverified copy. A real browser's next request
+    // reloads them from the session, which is what this restores.
+    app('auth')->forgetGuards();
+}
+
 it('carries a chosen plan from the signup link to a started trial', function () {
     $this->get(route('register', ['plan' => 'pro']))
         ->assertOk()
@@ -39,6 +55,8 @@ it('carries a chosen plan from the signup link to a started trial', function () 
         'password' => 'Str0ng-password!',
         'password_confirmation' => 'Str0ng-password!',
     ])->assertRedirect();
+
+    verifyLatestSignup();
 
     $this->post(route('workspace.store'), ['name' => 'Acme Inc'])->assertRedirect();
 
@@ -64,6 +82,8 @@ it('leaves a plain signup on the free tier', function () {
         'password' => 'Str0ng-password!',
         'password_confirmation' => 'Str0ng-password!',
     ]);
+
+    verifyLatestSignup();
 
     $this->post(route('workspace.store'), ['name' => 'Free Co']);
 
@@ -130,6 +150,8 @@ it('does not start a second trial on the next workspace', function () {
         'password' => 'Str0ng-password!',
         'password_confirmation' => 'Str0ng-password!',
     ]);
+
+    verifyLatestSignup();
 
     $this->post(route('workspace.store'), ['name' => 'First Co']);
     $this->post(route('workspace.store'), ['name' => 'Second Co']);

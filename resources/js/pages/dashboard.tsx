@@ -29,9 +29,14 @@ export default function Dashboard({ must_verify_email }: Props) {
             <Head title="Dashboard" />
 
             <div className="flex flex-col gap-6 p-6">
+                {/* Section 5: verification sits between signing up and naming a
+                    workspace, and the routes now enforce that order. So this
+                    says what it BLOCKS - a notice that reads as optional next
+                    to a form that will bounce them is worse than no notice. */}
                 {must_verify_email && (
-                    <p className="rounded-md border border-border p-3 text-sm">
-                        Please confirm your email address.{' '}
+                    <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                        Confirm your email address to create a workspace or
+                        invite anyone.{' '}
                         <Link
                             href="/verify-email"
                             className="underline underline-offset-4"
@@ -107,6 +112,7 @@ export default function Dashboard({ must_verify_email }: Props) {
                             }
                             placeholder="New workspace name"
                             className="w-72"
+                            disabled={must_verify_email}
                         />
                         {form.errors.name && (
                             <p className="text-xs text-destructive">
@@ -114,7 +120,12 @@ export default function Dashboard({ must_verify_email }: Props) {
                             </p>
                         )}
                     </div>
-                    <Button type="submit" disabled={form.processing}>
+                    {/* Disabled rather than hidden: the point is that this is
+                        waiting on one step, not that it does not exist. */}
+                    <Button
+                        type="submit"
+                        disabled={form.processing || must_verify_email}
+                    >
                         Create workspace
                     </Button>
                 </form>

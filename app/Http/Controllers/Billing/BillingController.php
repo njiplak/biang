@@ -6,6 +6,7 @@ use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Billing\UsageContract;
+use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\AddonPurchaseRequest;
 use App\Http\Requests\Billing\AddonQuantityRequest;
@@ -16,6 +17,7 @@ use App\Models\Plan;
 use App\Models\PlanPrice;
 use App\Models\Workspace;
 use App\Models\WorkspaceEntitlement;
+use App\Service\Billing\SubscriptionService;
 use App\Support\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -52,10 +54,22 @@ class BillingController extends Controller
                 'state' => $workspace->displayState()->value,
                 'state_label' => $workspace->displayState()->label(),
                 'over_limit_features' => $workspace->over_limit_features,
+                // Section 5's link out to Dodo, but only once there is an
+                // account there to open. A free workspace never reaches them
+                // at all (section 12), so the button would lead nowhere.
+                'has_payment_account' => filled($workspace->dodo_customer_id),
             ],
             'subscription' => $this->subscriptionPayload($workspace),
             'usage' => $this->usagePayload($workspace),
             'plans' => $this->planPayload(),
+            /*
+             * Section 12: "Trial eligibility: one per person, ever." The person,
+             * not the workspace - so this is asked of whoever is looking at the
+             * page. Sent because the alternative is offering a trial button that
+             * can only ever answer TrialAlreadyConsumed; a returning customer
+             * should be shown the way to buy instead.
+             */
+            'can_start_trial' => ! request()->user()->hasConsumedTrial(),
             // Section 11: carried here when somebody already signed in clicks
             // "Start trial" on the marketing site. Preselects rather than
             // acting, because starting a trial is their decision to confirm.
@@ -66,17 +80,37 @@ class BillingController extends Controller
         ]);
     }
 
-    public function startTrial(PlanPriceRequest $request): RedirectResponse
+    /**
+     * Section 4: "A card is required to start. We collect it up front through
+     * Dodo." So this does not create a trial - it sends the customer to the
+     * same checkout as a purchase, with the first fourteen days free.
+     *
+     * That is the whole basis of the auto-charge on day 15. A trial with no
+     * card cannot charge, so it either gives the product away or ends in a
+     * demand for payment nobody agreed to; both are worse than asking now.
+     *
+     * Eligibility is checked HERE rather than left to the webhook, so someone
+     * who has already had their one trial is told before they enter a card.
+     */
+    public function startTrial(PlanPriceRequest $request): SymfonyResponse
     {
         $workspace = $this->workspace();
+        $buyer = $request->user();
 
-        $this->subscriptions->startTrial(
+        if ($buyer->hasConsumedTrial()) {
+            throw new TrialAlreadyConsumed($buyer);
+        }
+
+        $url = $this->gateway->createCheckout(
             $workspace,
             PlanPrice::findOrFail($request->validated('plan_price_id')),
-            $request->user(),
+            $buyer,
+            route('billing.index'),
+            route('billing.index'),
+            SubscriptionService::TRIAL_DAYS,
         );
 
-        return back();
+        return Inertia::location($url);
     }
 
     public function changePlan(PlanPriceRequest $request): RedirectResponse
@@ -141,6 +175,21 @@ class BillingController extends Controller
         );
 
         // Inertia cannot follow a redirect to another origin on its own.
+        return Inertia::location($url);
+    }
+
+    /**
+     * Section 5: "open the payment provider's page for cards and invoices."
+     *
+     * Same shape as checkout() and for the same reason - the destination is
+     * Dodo's, and PortalUnavailable renders as a message rather than an error
+     * page, because a workspace with no payment account is an ordinary state
+     * (the free tier, and every workspace granted a plan by hand).
+     */
+    public function portal(): SymfonyResponse
+    {
+        $url = $this->gateway->customerPortalUrl($this->workspace(), route('billing.index'));
+
         return Inertia::location($url);
     }
 

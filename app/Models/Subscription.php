@@ -93,6 +93,18 @@ class Subscription extends Model
         return $this->belongsTo(PlanPrice::class);
     }
 
+    /**
+     * Whether Dodo is holding this subscription, as opposed to a plan a staff
+     * member granted by hand (section 10) or a trial with no card behind it.
+     *
+     * The distinction decides who does the billing: anything true here is
+     * theirs to charge, prorate and renew, and ours only to reflect.
+     */
+    public function isHeldWithProvider(): bool
+    {
+        return filled($this->dodo_subscription_id);
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(SubscriptionItem::class);

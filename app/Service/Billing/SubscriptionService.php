@@ -3,6 +3,7 @@
 namespace App\Service\Billing;
 
 use App\Contract\Billing\EntitlementContract;
+use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
@@ -37,12 +38,18 @@ use Illuminate\Support\Facades\DB;
  */
 class SubscriptionService implements SubscriptionContract
 {
-    /** Section 13.2 still lists confirming 14 days as open. */
-    private const TRIAL_DAYS = 14;
+    /**
+     * Section 4, and section 13 now settles it at 14. Public because the
+     * checkout that COLLECTS the card has to ask for the same number of free
+     * days this service would have granted - two constants would drift into a
+     * trial that ends on a different day than the one we emailed about.
+     */
+    public const TRIAL_DAYS = 14;
 
     public function __construct(
         private readonly EntitlementContract $entitlements,
         private readonly MembershipContract $memberships,
+        private readonly PaymentGatewayContract $gateway,
     ) {}
 
     public function startTrial(Workspace $workspace, PlanPrice $price, User $startedBy): Subscription
@@ -150,33 +157,122 @@ class SubscriptionService implements SubscriptionContract
         });
     }
 
+    /**
+     * Section 7 is why this exists at all: the provider's own plan switcher is
+     * turned OFF, because a downgrade made outside our app could not be blocked.
+     * So every plan change comes through here, and the seat check runs first.
+     *
+     * Order matters, and it is deliberate:
+     *
+     *   assertFits  →  tell Dodo (money)  →  move our rows (access)
+     *
+     * The seat check is ours and must refuse before anybody is charged.
+     * Proration is Dodo's (section 8 makes them merchant of record), and if
+     * they refuse we must not move access the customer has not paid for - so
+     * PlanChangeUnavailable propagates and our rows are untouched.
+     */
     public function changePlan(Workspace $workspace, PlanPrice $price): Subscription
     {
-        return DB::transaction(function () use ($workspace, $price) {
-            $subscription = $this->liveSubscription($workspace);
+        $subscription = $this->liveSubscription($workspace);
 
-            if ($subscription === null) {
-                throw new WorkspaceAlreadySubscribed($workspace);
-            }
+        if ($subscription === null) {
+            throw new NoActiveSubscription($workspace);
+        }
 
-            $this->assertFits($workspace, $price);
+        // Section 7: "The downgrade is blocked until they remove three people."
+        // Before the money, so a refusal costs nothing to unwind.
+        $this->assertFits($workspace, $price);
 
+        /*
+         * Deliberately OUTSIDE the transaction below. A call to somebody else's
+         * system cannot be rolled back, and holding a database transaction open
+         * across a network round trip is how a slow provider becomes a locked
+         * table.
+         */
+        if ($subscription->isHeldWithProvider()) {
+            $this->gateway->changeSubscriptionPlan($subscription, $price, $this->providerAddons($subscription));
+        }
+
+        return DB::transaction(function () use ($workspace, $subscription, $price) {
             $subscription->update([
                 'plan_id' => $price->plan_id,
                 'plan_price_id' => $price->id,
             ]);
 
+            /*
+             * Applied now rather than waiting for the confirming webhook. An
+             * upgrade the customer has just been charged for has to work
+             * immediately; the reconciler corrects anything Dodo later reports
+             * differently, and section 8 keeps THEM authoritative for the money
+             * either way.
+             */
             $this->settle($workspace, $workspace->billing_status);
 
             return $subscription->refresh();
         });
     }
 
+    /**
+     * The add-ons Dodo has to keep when the plan moves under them.
+     *
+     * changePlan replaces the entire subscription line-up, so an add-on that is
+     * not restated is silently dropped - and with it the entitlement it grants,
+     * which is how a customer who upgraded would lose the extra seats they are
+     * still paying for.
+     *
+     * @return list<array{addon_id: string, quantity: int}>
+     */
+    private function providerAddons(Subscription $subscription): array
+    {
+        /*
+         * The provider id lives on the PRICE, not the add-on: Dodo's add-on
+         * carries its own amount, so one of their add-ons is one priced row
+         * here. An unpublished one is skipped rather than sent as null - it
+         * cannot be attached, and losing it from the line-up is better than a
+         * rejected call that loses the whole plan change.
+         */
+        return $subscription->items()
+            ->with('addonPrice')
+            ->get()
+            ->filter(fn (SubscriptionItem $item) => filled($item->addonPrice?->dodo_addon_id))
+            ->map(fn (SubscriptionItem $item) => [
+                'addon_id' => $item->addonPrice->dodo_addon_id,
+                'quantity' => $item->quantity,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Section 8's table has cancelling working from both sides. This is ours,
+     * and it has to reach Dodo before it touches anything of ours.
+     *
+     *   tell Dodo to stop charging  →  then drop access to free
+     *
+     * Get that order wrong and a cancellation takes the paid product away while
+     * the card keeps being charged every month. The customer finds out from a
+     * bank statement rather than from us, and because Dodo is merchant of
+     * record their recourse is a formal chargeback, not a support ticket.
+     *
+     * If Dodo refuses, CancellationFailed propagates and NOTHING changes - the
+     * customer keeps the plan they are paying for and can try again. That is
+     * the recoverable failure; the other order is not.
+     */
     public function cancel(Workspace $workspace): void
     {
-        DB::transaction(function () use ($workspace) {
-            $subscription = $this->liveSubscription($workspace);
+        $subscription = $this->liveSubscription($workspace);
 
+        /*
+         * Outside the transaction, like every other call to their system.
+         * Immediate rather than at the period end, because the lines below take
+         * the paid features away immediately - scheduling the money to stop
+         * later would mean charging them again for a plan they no longer have.
+         */
+        if ($subscription?->isHeldWithProvider()) {
+            $this->gateway->cancelSubscription($subscription);
+        }
+
+        DB::transaction(function () use ($workspace, $subscription) {
             if ($subscription !== null) {
                 $subscription->update([
                     'status' => SubscriptionStatus::Canceled,
@@ -196,28 +292,42 @@ class SubscriptionService implements SubscriptionContract
      * Section 4: three kinds of add-on, charged differently, but all resolving
      * through the SAME entitlement path as the plan's own allowance.
      *
-     * Entitlements move the moment this returns. No money moves: Dodo is
-     * merchant of record and owns proration (section 8), so phase 4 reconciles
-     * the charge against the item recorded here. That keeps section 14's
-     * "sellable manually" promise intact.
+     * The money now moves with the entitlement. Dodo owns the proration
+     * (section 8), so the charge is theirs to make - but it has to happen
+     * BEFORE we grant the capacity, or section 7's seat sale hands out a seat
+     * on a card that was going to decline.
+     *
+     * A subscription granted by hand has nothing to charge against and is
+     * deliberately untouched: section 14 phase 3 keeps the product sellable
+     * with no provider at all.
      */
     public function purchaseAddon(Workspace $workspace, AddonPrice $price, int $quantity = 1): Subscription
     {
-        return DB::transaction(function () use ($workspace, $price, $quantity) {
-            $subscription = $this->requireSubscription($workspace);
-            $addon = $price->addon;
+        $subscription = $this->requireSubscription($workspace);
+        $addon = $price->addon;
 
-            $this->assertPurchasable($subscription, $addon, $price);
+        $this->assertPurchasable($subscription, $addon, $price);
 
+        $existing = SubscriptionItem::withoutWorkspaceScope()
+            ->where('subscription_id', $subscription->id)
+            ->where('addon_id', $addon->id)
+            ->first();
+
+        // An unlock is on or off; buying it twice is still just "on".
+        $resolved = $addon->kind === AddonKind::Unlock
+            ? 1
+            : max(1, ($existing?->quantity ?? 0) + $quantity);
+
+        // Outside the transaction: a network round trip cannot be rolled back,
+        // and holding a write lock across one is how a slow provider becomes a
+        // locked table.
+        $this->chargeAddons($subscription, $price, $resolved);
+
+        return DB::transaction(function () use ($workspace, $subscription, $addon, $price, $resolved) {
             $item = SubscriptionItem::withoutWorkspaceScope()
                 ->where('subscription_id', $subscription->id)
                 ->where('addon_id', $addon->id)
                 ->first();
-
-            // An unlock is on or off; buying it twice is still just "on".
-            $resolved = $addon->kind === AddonKind::Unlock
-                ? 1
-                : max(1, ($item?->quantity ?? 0) + $quantity);
 
             if ($item === null) {
                 SubscriptionItem::withoutWorkspaceScope()->create([
@@ -240,22 +350,30 @@ class SubscriptionService implements SubscriptionContract
 
     public function changeAddonQuantity(Workspace $workspace, Addon $addon, int $quantity): Subscription
     {
-        return DB::transaction(function () use ($workspace, $addon, $quantity) {
-            $subscription = $this->requireSubscription($workspace);
+        $subscription = $this->requireSubscription($workspace);
 
-            $item = SubscriptionItem::withoutWorkspaceScope()
-                ->where('subscription_id', $subscription->id)
-                ->where('addon_id', $addon->id)
-                ->first();
+        $item = SubscriptionItem::withoutWorkspaceScope()
+            ->where('subscription_id', $subscription->id)
+            ->where('addon_id', $addon->id)
+            ->with('addonPrice')
+            ->first();
 
-            if ($item === null) {
-                throw new AddonNotAvailable($addon, 'not currently on this subscription');
-            }
+        if ($item === null) {
+            throw new AddonNotAvailable($addon, 'not currently on this subscription');
+        }
 
-            // Reducing capacity is a downgrade, and the same rule applies: we do
-            // not take away what is in use, and we say how much has to go first.
-            $this->assertReductionFits($workspace, $addon, $item->quantity, $quantity);
+        // Reducing capacity is a downgrade, and the same rule applies: we do
+        // not take away what is in use, and we say how much has to go first.
+        $this->assertReductionFits($workspace, $addon, $item->quantity, $quantity);
 
+        // Both directions go through Dodo: buying more is a charge, and giving
+        // some back is a credit they owe. Skipping the reduction would keep
+        // billing for capacity we have already taken away.
+        if ($item->addonPrice !== null) {
+            $this->chargeAddons($subscription, $item->addonPrice, max(0, $quantity));
+        }
+
+        return DB::transaction(function () use ($workspace, $subscription, $item, $quantity) {
             $quantity <= 0
                 ? $item->delete()
                 : $item->update(['quantity' => $quantity]);
@@ -264,6 +382,41 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+    }
+
+    /**
+     * Restate the whole add-on line-up at Dodo with $price set to $quantity.
+     *
+     * Section 4 charges a quantity add-on "per unit, prorated when the quantity
+     * changes", and Dodo does that arithmetic against the line-up it is given.
+     * The line-up is sent WHOLE rather than as a delta because their plan-change
+     * call replaces it - anything omitted is dropped, along with the entitlement
+     * it grants.
+     *
+     * Does nothing for a subscription granted by hand: there is no payment
+     * account behind it, and section 14 phase 3 depends on that staying true.
+     */
+    private function chargeAddons(Subscription $subscription, AddonPrice $price, int $quantity): void
+    {
+        if (! $subscription->isHeldWithProvider()) {
+            return;
+        }
+
+        $addons = collect($this->providerAddons($subscription))
+            ->keyBy('addon_id')
+            ->when(
+                filled($price->dodo_addon_id),
+                fn ($items) => $quantity <= 0
+                    ? $items->forget($price->dodo_addon_id)
+                    : $items->put($price->dodo_addon_id, [
+                        'addon_id' => $price->dodo_addon_id,
+                        'quantity' => $quantity,
+                    ]),
+            )
+            ->values()
+            ->all();
+
+        $this->gateway->changeSubscriptionPlan($subscription, $subscription->planPrice, $addons);
     }
 
     private function assertPurchasable(Subscription $subscription, Addon $addon, AddonPrice $price): void

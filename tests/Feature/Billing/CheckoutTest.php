@@ -1,12 +1,10 @@
 <?php
 
-use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Workspace\WorkspaceContract;
 use App\Enums\BillingStatus;
 use App\Exceptions\Domain\CheckoutUnavailable;
 use App\Models\PlanPrice;
 use App\Models\User;
-use App\Models\Workspace;
 use App\Models\WorkspaceMember;
 use App\Service\Billing\DodoPaymentGateway;
 use Database\Seeders\FeatureSeeder;
@@ -33,16 +31,14 @@ beforeEach(function () {
 
     $this->price = PlanPrice::whereHas('plan', fn ($q) => $q->where('code', 'pro'))
         ->where('billing_interval', 'month')->firstOrFail();
+
+    // A price nobody published has no product to sell, and the gateway refuses
+    // it - so a test about handing the customer over has to publish it first.
+    $this->price->update(['dodo_product_id' => 'prod_pro_month']);
 });
 
 it('hands the customer to the provider checkout', function () {
-    $this->swap(PaymentGatewayContract::class, new class implements PaymentGatewayContract
-    {
-        public function createCheckout(Workspace $w, PlanPrice $p, User $u, string $r, string $c): string
-        {
-            return 'https://checkout.dodopayments.test/session/abc';
-        }
-    });
+    fakeGateway();
 
     $this->actingAs($this->owner)
         ->post(route('billing.checkout'), ['plan_price_id' => $this->price->id])
@@ -55,13 +51,7 @@ it('hands the customer to the provider checkout', function () {
  * away must not end up subscribed.
  */
 it('changes nothing about our own state', function () {
-    $this->swap(PaymentGatewayContract::class, new class implements PaymentGatewayContract
-    {
-        public function createCheckout(Workspace $w, PlanPrice $p, User $u, string $r, string $c): string
-        {
-            return 'https://checkout.dodopayments.test/session/abc';
-        }
-    });
+    fakeGateway();
 
     $this->actingAs($this->owner)
         ->post(route('billing.checkout'), ['plan_price_id' => $this->price->id]);
@@ -109,7 +99,9 @@ it('explains itself when the provider is not configured', function () {
 it('refuses a price that was never published to the provider', function () {
     config(['dodo.api_key' => 'key_test']);
 
-    expect($this->price->dodo_product_id)->toBeNull();
+    // Back to unpublished, which is what every price starts as until staff
+    // publish it from the catalogue.
+    $this->price->update(['dodo_product_id' => null]);
 
     expect(fn () => app(DodoPaymentGateway::class)->createCheckout(
         $this->workspace,

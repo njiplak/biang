@@ -45,3 +45,32 @@ function something()
 {
     // ..
 }
+
+/**
+ * Swaps in a Dodo that answers (or, with ->broken(), one that is down) and
+ * hands it back so a test can assert on what it was asked to do.
+ *
+ * Global because every part of billing eventually talks to this seam, and the
+ * alternative - an anonymous class per test file - meant every method added to
+ * PaymentGatewayContract broke a handful of unrelated tests at once.
+ */
+function fakeGateway(): Tests\Fakes\FakePaymentGateway
+{
+    $fake = new Tests\Fakes\FakePaymentGateway;
+
+    test()->swap(App\Contract\Billing\PaymentGatewayContract::class, $fake);
+
+    return $fake;
+}
+
+/**
+ * The subscription service, resolved fresh every call.
+ *
+ * Never cache this in a beforeEach: the payment gateway is constructor-injected,
+ * so an instance built before fakeGateway() swaps the binding is holding the
+ * real Dodo client and will try to reach the network.
+ */
+function subscriptions(): App\Contract\Billing\SubscriptionContract
+{
+    return app(App\Contract\Billing\SubscriptionContract::class);
+}

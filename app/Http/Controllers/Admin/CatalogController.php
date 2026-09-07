@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Contract\Admin\AuditContract;
 use App\Contract\Admin\CatalogContract;
+use App\Contract\Billing\CatalogPublisherContract;
+use App\Exceptions\Domain\ProductPublishFailed;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\AddonPriceRequest;
 use App\Http\Requests\Admin\AddonRequest;
@@ -11,6 +13,7 @@ use App\Http\Requests\Admin\PlanFeatureRequest;
 use App\Http\Requests\Admin\PlanPriceRequest;
 use App\Http\Requests\Admin\PlanRequest;
 use App\Models\Addon;
+use App\Models\AddonPrice;
 use App\Models\Plan;
 use App\Models\PlanPrice;
 use Illuminate\Http\RedirectResponse;
@@ -32,6 +35,7 @@ class CatalogController extends Controller
     public function __construct(
         private readonly CatalogContract $catalog,
         private readonly AuditContract $audit,
+        private readonly CatalogPublisherContract $publisher,
     ) {}
 
     public function index(): Response
@@ -90,7 +94,46 @@ class CatalogController extends Controller
             'interval' => $price->billing_interval->value,
         ]);
 
+        return $this->publish($price);
+    }
+
+    /**
+     * Section 10: a price staff create has to reach Dodo, or nobody can buy it.
+     *
+     * Deliberately AFTER the price is saved and audited, and deliberately not
+     * inside the same transaction: publishing is a call to somebody else's
+     * system, and a rollback cannot un-create a product at their end. So a
+     * failure leaves a saved-but-unpublished price, says so, and the catalogue
+     * screen offers to try again.
+     */
+    private function publish(PlanPrice|AddonPrice $price): RedirectResponse
+    {
+        try {
+            $this->publisher->publish($price);
+        } catch (ProductPublishFailed $e) {
+            return back()->withErrors(['errors' => $e->userMessage()]);
+        }
+
+        $this->audit->record('catalog.price_published', null, $price->refresh(), [
+            'dodo_product_id' => $price->dodo_product_id,
+        ]);
+
         return back();
+    }
+
+    /** Retrying a publish that failed, from the catalogue screen. */
+    public function publishPlanPrice(Plan $plan, PlanPrice $price): RedirectResponse
+    {
+        abort_unless($price->plan_id === $plan->id, 404);
+
+        return $this->publish($price);
+    }
+
+    public function publishAddonPrice(Addon $addon, AddonPrice $price): RedirectResponse
+    {
+        abort_unless($price->addon_id === $addon->id, 404);
+
+        return $this->publish($price);
     }
 
     public function archivePlanPrice(Plan $plan, PlanPrice $price): RedirectResponse
@@ -99,6 +142,10 @@ class CatalogController extends Controller
 
         $this->catalog->archivePrice($price);
 
+        // Section 10: retire it at their end too, or it stays purchasable
+        // through a checkout link somebody already has.
+        $this->publisher->retire($price);
+
         $this->audit->record('catalog.price_archived', null, $price, ['plan' => $plan->code]);
 
         return back();
@@ -106,7 +153,12 @@ class CatalogController extends Controller
 
     public function archivePlan(Plan $plan): RedirectResponse
     {
+        // Read BEFORE archiving: archivePlan archives every live price with it.
+        $live = $plan->prices()->whereNull('archived_at')->get();
+
         $this->catalog->archivePlan($plan);
+
+        $live->each(fn (PlanPrice $price) => $this->publisher->retire($price));
 
         $this->audit->record('catalog.plan_retired', null, $plan, ['code' => $plan->code]);
 
@@ -166,12 +218,18 @@ class CatalogController extends Controller
             'amount_minor' => $price->amount_minor,
         ]);
 
-        return back();
+        return $this->publish($price);
     }
 
     public function archiveAddon(Addon $addon): RedirectResponse
     {
+        // Read BEFORE archiving: archiveAddon archives every live price with
+        // it, so afterwards there is nothing left matching "still on sale".
+        $live = $addon->prices()->whereNull('archived_at')->get();
+
         $this->catalog->archiveAddon($addon);
+
+        $live->each(fn (AddonPrice $price) => $this->publisher->retire($price));
 
         $this->audit->record('catalog.addon_retired', null, $addon, ['key' => $addon->key]);
 

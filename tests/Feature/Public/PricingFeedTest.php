@@ -1,7 +1,9 @@
 <?php
 
 use App\Contract\Admin\CatalogContract;
+use App\Models\Feature;
 use App\Models\Plan;
+use App\Support\Features;
 use Database\Seeders\FeatureSeeder;
 use Database\Seeders\PlanSeeder;
 
@@ -47,8 +49,9 @@ it('publishes the limits so the table needs no retyping', function () {
         // The free plan's seats, straight off plan_features - unit included, so
         // the marketing site can write "2 seats" without knowing the noun.
         ->assertJsonFragment(['key' => 'seats', 'name' => 'Seats', 'unit' => 'seat', 'value' => 2])
-        // Section 7: null is unlimited, and stays null on the wire.
-        ->assertJsonFragment(['key' => 'projects', 'name' => 'Projects', 'unit' => 'project', 'value' => null]);
+        // Plans carry only limits something actually meters, so `projects` is
+        // deliberately absent rather than published as a limit nobody enforces.
+        ->assertJsonMissing(['key' => 'projects']);
 });
 
 // Section 11: "Two buttons, two destinations."
@@ -149,4 +152,22 @@ it('is cacheable so the marketing site is not on our database', function () {
     $this->getJson(route('pricing'))
         ->assertOk()
         ->assertHeader('Cache-Control', 'max-age=60, public, s-maxage=300');
+});
+
+/*
+ * Section 7: null is unlimited, and has to stay null on the wire - a marketing
+ * site that receives 0 would advertise the opposite of what we sell.
+ *
+ * Given its own test because no seeded plan carries an unlimited value any
+ * more; borrowing one meant this rule was only covered by accident.
+ */
+it('publishes an unlimited limit as null rather than zero', function () {
+    $plan = Plan::firstWhere('code', 'pro');
+    $seats = Feature::firstWhere('key', Features::SEATS);
+
+    $plan->features()->updateExistingPivot($seats->id, ['value' => null]);
+
+    $this->getJson(route('pricing'))
+        ->assertOk()
+        ->assertJsonFragment(['key' => 'seats', 'value' => null]);
 });

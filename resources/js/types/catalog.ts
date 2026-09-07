@@ -6,6 +6,9 @@ export type CatalogPrice = {
     currency: string;
     amount_minor: number;
     is_archived: boolean;
+    // false until the price exists as a product at the payment provider, which
+    // is what makes it buyable at all - a saved price is not an on-sale price
+    is_published: boolean;
 };
 
 export type CatalogPlanFeature = {

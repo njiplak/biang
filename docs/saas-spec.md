@@ -1,7 +1,7 @@
 # SaaS Product Spec
 
 **Status:** decisions locked, not yet built
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-07
 **Audience:** product, sales, support, engineering
 
 This describes *what the business does*, not how it is built. No schema, no code.
@@ -333,14 +333,31 @@ The marketing site is a separate project. The seam between them:
 
 ## 13. Still open
 
-1. **What is our value metric?** The number that scales price — seats,
-   projects, storage, usage, something else. **Everything about the plan
-   table is blocked on this.** It is the single most important remaining
-   decision.
-2. Confirm 14 days as the trial length.
-3. Confirm 30 days as the deletion retention default.
+**Settled since this was written:**
+
+1. **The value metric is seats.** It is the only thing this product has that
+   a customer consumes, and section 2 describes a workspace shared with
+   colleagues — which is what seat pricing is for. Plans now carry a seat
+   limit and nothing else.
+
+   The consequence is worth stating plainly, because it is a rule we now
+   hold ourselves to: **a plan only advertises a limit that something
+   actually counts.** `projects` and `api_calls` still exist as features and
+   cost nothing to keep, but they are on no plan, because a limit nothing
+   meters can never be reached — advertising one is advertising a fiction.
+   Putting either back is one number in the admin console, no deploy.
+
+2. **Trial length is 14 days**, and the two warning emails fire at 3 days
+   and 1 day before it charges (section 4).
+
+3. **Deletion retention is 30 days**, configurable per environment rather
+   than per customer.
+
+**Genuinely still open:**
+
 4. Confirm that anonymising, rather than hard-deleting, is acceptable to us
-   legally.
+   legally. This is the one item on the original list that is a question for
+   someone outside engineering, and it is unchanged.
 
 ---
 

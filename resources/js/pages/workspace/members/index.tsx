@@ -36,6 +36,8 @@ type Props = {
     seats: { used: number; limit: number | null };
     // section 7's priced offer; null on the free tier, where the answer is an upgrade
     seat_offer: SeatOffer | null;
+    // inviting is gated on a verified address (section 5)
+    must_verify_email: boolean;
 };
 
 const money = (minor: number, currency: string) =>
@@ -51,6 +53,7 @@ export default function MembersIndex({
     invitations,
     seats,
     seat_offer,
+    must_verify_email,
 }: Props) {
     const form = useForm({ email: '', role: 'member' });
     // Domain failures (SeatLimitReached) arrive under a generic `errors` key
@@ -184,6 +187,7 @@ export default function MembersIndex({
                                 }
                                 placeholder="colleague@example.com"
                                 className="h-8 w-56"
+                                disabled={must_verify_email}
                             />
                             <select
                                 value={form.data.role}
@@ -203,13 +207,28 @@ export default function MembersIndex({
                             <Button
                                 type="submit"
                                 size="sm"
-                                disabled={form.processing}
+                                disabled={form.processing || must_verify_email}
                             >
                                 Invite
                             </Button>
                         </form>
                     }
                 />
+
+                {/* Section 5: an unproved address cannot send mail in the
+                    customer's name. Said here rather than only enforced, so a
+                    disabled form is an explanation instead of a dead end. */}
+                {must_verify_email && (
+                    <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                        Confirm your email address before inviting anyone.{' '}
+                        <Link
+                            href="/verify-email"
+                            className="underline underline-offset-4"
+                        >
+                            Resend the link
+                        </Link>
+                    </p>
+                )}
 
                 {/* Section 7: "A seat limit should be a sales moment, not a
                     wall." At the limit we price the fix rather than refusing. */}
@@ -228,7 +247,11 @@ export default function MembersIndex({
                         </span>
                         <Button
                             size="sm"
-                            disabled={!form.data.email || form.processing}
+                            disabled={
+                                !form.data.email ||
+                                form.processing ||
+                                must_verify_email
+                            }
                             onClick={(e) => invite(e, true)}
                         >
                             Add a seat and invite

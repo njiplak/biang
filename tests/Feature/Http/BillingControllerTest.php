@@ -21,6 +21,10 @@ beforeEach(function () {
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
     $this->proPrice = PlanPrice::whereHas('plan', fn ($q) => $q->where('code', 'pro'))
         ->where('billing_interval', 'month')->first();
+
+    // Published, as a price staff have put on sale would be - the gateway
+    // refuses one without a product behind it, trial or purchase alike.
+    $this->proPrice->update(['dodo_product_id' => 'prod_pro_month']);
 });
 
 // Section 5: "Billing lives on one page inside the app: current plan, usage
@@ -33,8 +37,11 @@ it('shows the billing page to someone who may manage billing', function () {
             ->component('billing/index')
             ->where('workspace.state', 'free')
             ->where('subscription', null)
-            // section 5: usage against EVERY limit, not only a breached one
-            ->has('usage', 3)
+            // Section 5: usage against EVERY limit the plan carries. Plans ship
+            // only limits something actually meters, so the free plan is seats
+            // alone - a decorative limit here would be a fiction on the page.
+            ->has('usage', 1)
+            ->where('usage.0.feature', 'seats')
             ->has('plans'));
 });
 
@@ -53,24 +60,42 @@ it('lets a billing manager see billing', function () {
     $this->actingAs($billing)->get(route('billing.index'))->assertOk();
 });
 
-it('starts a trial', function () {
+/*
+ * Section 4: "A card is required to start. We collect it up front through
+ * Dodo." So starting a trial hands the customer to the same checkout as a
+ * purchase, with the first fourteen days free - and, exactly like a purchase,
+ * nothing about our own state moves until their webhook says the card was
+ * accepted. A customer who closes the card form has no trial and has not spent
+ * their one.
+ */
+it('sends someone starting a trial to the card form', function () {
+    $gateway = fakeGateway();
+
     $this->actingAs($this->owner)
         ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
-        ->assertRedirect();
+        ->assertRedirect($gateway->checkoutUrl);
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Trialing)
-        ->and($this->owner->fresh()->hasConsumedTrial())->toBeTrue();
+    expect($gateway->checkouts)->toHaveCount(1)
+        ->and($gateway->checkouts[0]['trial_period_days'])->toBe(14)
+        ->and($gateway->checkouts[0]['plan_price_id'])->toBe($this->proPrice->id);
+
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free)
+        ->and($this->owner->fresh()->hasConsumedTrial())->toBeFalse();
 });
 
 // Section 12: one trial per person, ever - surfaced as a message, not a crash.
 it('explains why a second trial is refused', function () {
+    $gateway = fakeGateway();
     $this->owner->update(['trial_consumed_at' => now()]);
 
     $this->actingAs($this->owner)
         ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
         ->assertSessionHasErrors('errors');
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+    // Refused BEFORE the card form, not after. Being asked for a card and then
+    // told you were never eligible is the worst order to do this in.
+    expect($gateway->checkouts)->toBeEmpty()
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
 });
 
 it('changes plan', function () {
@@ -136,4 +161,77 @@ it('rejects an archived price', function () {
     $this->actingAs($this->owner)
         ->post(route('billing.trial'), ['plan_price_id' => $archived->id])
         ->assertSessionHasErrors('plan_price_id');
+});
+
+/*
+ * Section 5: "buttons to change plan, BUY ADD-ONS". The server has always sent
+ * this payload; until the page rendered it, the only way to buy a seat was the
+ * offer inside the invite flow, and there was no way at all to change a
+ * quantity or drop one.
+ */
+it('offers the add-ons the current plan sells', function () {
+    $this->seed(Database\Seeders\AddonSeeder::class);
+
+    app(SubscriptionContract::class)->grantPlan(
+        $this->workspace, $this->proPrice, AdminUser::factory()->create(), 'seed'
+    );
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('addons.available', 1)
+            ->where('addons.available.0.key', 'extra-seat')
+            ->where('addons.available.0.kind', 'quantity')
+            ->has('addons.owned', 0));
+});
+
+it('moves a bought add-on from the shelf to the bill', function () {
+    $this->seed(Database\Seeders\AddonSeeder::class);
+
+    app(SubscriptionContract::class)->grantPlan(
+        $this->workspace, $this->proPrice, AdminUser::factory()->create(), 'seed'
+    );
+
+    $price = App\Models\AddonPrice::whereHas('addon', fn ($q) => $q->where('key', 'extra-seat'))->firstOrFail();
+
+    $this->actingAs($this->owner)
+        ->post(route('billing.addon.store'), ['addon_price_id' => $price->id, 'quantity' => 2])
+        ->assertRedirect();
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('addons.owned', 1)
+            ->where('addons.owned.0.quantity', 2)
+            // no longer on offer: it is already theirs
+            ->has('addons.available', 0));
+});
+
+// Section 12: free never touches the provider, so there is nothing to attach a
+// paid add-on to and the page must not pretend otherwise.
+it('offers no add-ons on the free tier', function () {
+    $this->seed(Database\Seeders\AddonSeeder::class);
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('addons.available', 0)
+            ->has('addons.owned', 0));
+});
+
+/*
+ * Section 12: "Trial eligibility: one per person, ever." Sent so the page can
+ * offer the way to BUY instead - a trial button that can only ever answer
+ * "you have already used yours" is worse than no button.
+ */
+it('stops offering a trial once the person has spent theirs', function () {
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('can_start_trial', true));
+
+    $this->owner->update(['trial_consumed_at' => now()]);
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('can_start_trial', false));
 });

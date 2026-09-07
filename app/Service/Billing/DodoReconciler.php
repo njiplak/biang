@@ -12,6 +12,7 @@ use App\Enums\SubscriptionStatus;
 use App\Models\DunningState;
 use App\Models\InvoiceSummary;
 use App\Models\Subscription;
+use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
@@ -90,6 +91,8 @@ class DodoReconciler implements ReconcilerContract
     {
         $workspace = $subscription->workspace;
 
+        $this->adoptCustomerId($workspace, $data);
+
         match ($event->event_type) {
             'subscription.active', 'subscription.renewed' => $this->activate($subscription, $workspace, $data),
             'subscription.on_hold', 'subscription.past_due', 'subscription.failed' => $this->pastDue($subscription, $workspace, $data),
@@ -111,13 +114,39 @@ class DodoReconciler implements ReconcilerContract
      */
     private function activate(Subscription $subscription, Workspace $workspace, array $data): void
     {
+        /*
+         * Dodo has no `trialing` status - a subscription in its free days is
+         * `active` with trial_period_days set and nothing charged yet. So we
+         * have to decide from something else what "active" means here.
+         *
+         * That something is whether MONEY has actually moved. It cannot be
+         * previous_billing_date: that field is required in their payload and is
+         * populated from the moment a subscription is created, trial or not, so
+         * testing it for null classifies every trial as already paid. (Verified
+         * against their sandbox, which is the only reason we know.)
+         *
+         * A charge of zero does not count. A trial that opens with a nil
+         * authorisation has still not been paid for.
+         */
+        $trialing = (int) ($data['trial_period_days'] ?? 0) > 0
+            && ! $this->hasBeenCharged($subscription);
+
         $subscription->update([
-            'status' => SubscriptionStatus::Active,
+            'status' => $trialing ? SubscriptionStatus::Trialing : SubscriptionStatus::Active,
             'billing_source' => BillingSource::Dodo,
             'current_period_start' => $this->date($data, 'previous_billing_date') ?? now(),
             'current_period_end' => $this->date($data, 'next_billing_date'),
+            // The trial ends when the first charge is due, which is the same
+            // date the section 4 warning emails count down to.
+            'trial_ends_at' => $trialing
+                ? $this->date($data, 'next_billing_date')
+                : $subscription->trial_ends_at,
             'cancel_at_period_end' => (bool) ($data['cancel_at_next_billing_date'] ?? false),
         ]);
+
+        if ($trialing) {
+            $this->consumeTrial($subscription, $data);
+        }
 
         // Section 9: recovering clears the grace window in the same breath, or
         // the workspace stays on a countdown it has already escaped.
@@ -125,7 +154,52 @@ class DodoReconciler implements ReconcilerContract
 
         $workspace->update(['grace_ends_at' => null]);
 
-        $this->settle($workspace, BillingStatus::Active);
+        $this->settle($workspace, $trialing ? BillingStatus::Trialing : BillingStatus::Active);
+    }
+
+    /**
+     * Whether real money has ever moved for this subscription.
+     *
+     * The trial/paid distinction rests on this rather than on anything in the
+     * payload, because it is the actual question - "have they been charged
+     * yet" - and it survives events arriving out of order (section 8).
+     *
+     * Zero-value payments are excluded on purpose: a trial that opens with a
+     * nil authorisation has still not been paid for, and counting it would end
+     * the trial on day one.
+     */
+    private function hasBeenCharged(Subscription $subscription): bool
+    {
+        return InvoiceSummary::withoutWorkspaceScope()
+            ->where('subscription_id', $subscription->id)
+            ->where('status', 'paid')
+            ->where('total_minor', '>', 0)
+            ->exists();
+    }
+
+    /**
+     * Section 12: "Trial eligibility: one per person, ever" - the person who
+     * STARTS one, which is why their id rides along in the checkout metadata.
+     * By the time this webhook lands there is no session left to ask.
+     *
+     * Only ever set, never cleared: a customer who cancels during the trial has
+     * still had their trial, which is the whole point of the rule.
+     */
+    private function consumeTrial(Subscription $subscription, array $data): void
+    {
+        $userId = $data['metadata']['started_by_user_id'] ?? null;
+
+        if ($userId === null) {
+            return;
+        }
+
+        User::query()
+            ->whereKey($userId)
+            ->whereNull('trial_consumed_at')
+            ->update([
+                'trial_consumed_at' => now(),
+                'trial_consumed_workspace_id' => $subscription->workspace_id,
+            ]);
     }
 
     /**
@@ -222,10 +296,47 @@ class DodoReconciler implements ReconcilerContract
         $this->resolveDunning($subscription, DunningResolution::Recovered);
         $workspace->update(['grace_ends_at' => null]);
 
-        if ($subscription->status === SubscriptionStatus::PastDue) {
+        /*
+         * A charge landing is what ENDS a trial, and it is also what recovers a
+         * past-due one. Both are here rather than only in activate(), because
+         * section 8 warns these events arrive out of order: if the renewal
+         * notification overtakes the payment, activate() has already run and
+         * seen no charge, and this is what corrects it.
+         */
+        $wasUnpaid = in_array($subscription->status, [
+            SubscriptionStatus::PastDue,
+            SubscriptionStatus::Trialing,
+        ], true);
+
+        if ($wasUnpaid && ($data['total_amount'] ?? 0) > 0) {
             $subscription->update(['status' => SubscriptionStatus::Active]);
             $this->settle($workspace, BillingStatus::Active);
         }
+    }
+
+    /**
+     * Section 5's "open the payment provider's page for cards and invoices"
+     * needs a customer to open it FOR, and this is the only place their id ever
+     * reaches us - we hand Dodo an email at checkout and they mint the customer.
+     *
+     * Written once and never overwritten. The column is unique, and a second id
+     * arriving for a workspace that already has one means something is wrong
+     * upstream; quietly adopting it would replace a working portal link with a
+     * stranger's.
+     */
+    private function adoptCustomerId(?Workspace $workspace, array $data): void
+    {
+        $customerId = $data['customer']['customer_id'] ?? null;
+
+        // Nullable deliberately. This runs for EVERY event type, including the
+        // ones the match below ignores, and a soft-deleted workspace resolves
+        // to null through the relation - so an unhandled event for a closed
+        // workspace used to pass through untouched and must keep doing so.
+        if ($workspace === null || $customerId === null || filled($workspace->dodo_customer_id)) {
+            return;
+        }
+
+        $workspace->update(['dodo_customer_id' => $customerId]);
     }
 
     private function resolveDunning(Subscription $subscription, DunningResolution $resolution): void

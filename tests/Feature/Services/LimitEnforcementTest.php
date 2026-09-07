@@ -6,6 +6,7 @@ use App\Contract\Workspace\WorkspaceContract;
 use App\Exceptions\Domain\LimitReached;
 use App\Models\AdminUser;
 use App\Models\Feature;
+use App\Models\Plan;
 use App\Models\User;
 use App\Support\Features;
 use Database\Seeders\FeatureSeeder;
@@ -32,6 +33,21 @@ beforeEach(function () {
 
     $this->workspace = app(WorkspaceContract::class)->create(User::factory()->create(), 'Acme Inc');
 });
+
+/**
+ * Puts a limit for $key on the plan this workspace is on, then rebuilds the
+ * snapshot the enforcement layer actually reads.
+ */
+function limitFreePlanTo(string $key, ?int $value): void
+{
+    $plan = Plan::firstWhere('is_free', true);
+    $feature = Feature::firstWhere('key', $key);
+
+    $plan->features()->syncWithoutDetaching([$feature->id => ['value' => $value]]);
+    $plan->features()->updateExistingPivot($feature->id, ['value' => $value]);
+
+    app(EntitlementContract::class)->rebuild(test()->workspace->fresh());
+}
 
 it('allows a write that stays inside the limit', function () {
     // Free plan carries 2 seats.
@@ -120,7 +136,11 @@ it('only claims to measure what something actually writes', function () {
 });
 
 it('confirms an unmeasured limit can never fire', function () {
-    // The free plan limits projects to 3 and nothing ever increments it.
+    // A limit on a key nothing increments, which is exactly why PlanSeeder no
+    // longer ships one: usage stays at zero, so the limit reads as enforced
+    // while being decorative.
+    limitFreePlanTo('projects', 3);
+
     $this->usage->evaluate($this->workspace);
 
     expect($this->usage->current($this->workspace, 'projects'))->toBe(0)
@@ -133,6 +153,11 @@ it('confirms an unmeasured limit can never fire', function () {
  * actually waiting on - a product, not a decision.
  */
 it('blocks on any metric the moment something meters it', function () {
+    // The limit is attached HERE rather than read off the seeder. Plans ship
+    // only measured limits now, so a test that borrowed a decorative one was
+    // really asserting the seeder's contents, not the machinery.
+    limitFreePlanTo('projects', 3);
+
     $this->usage->setGauge($this->workspace, 'projects', 4);
     $this->usage->evaluate($this->workspace);
 

@@ -17,6 +17,7 @@ use App\Models\WorkspaceMember;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use InvalidArgumentException;
 
 class CustomerService implements CustomerContract
 {
@@ -87,10 +88,16 @@ class CustomerService implements CustomerContract
                 // so an add-on or a staff override is reflected here too.
                 'limit' => $entitlements->firstWhere('feature_key', 'seats')?->value,
             ],
+            /*
+             * Members only. Limits, overrides and invoices are tables now and
+             * load themselves through paginateDetail(), so sending them here as
+             * well would compute every one of them twice on every page load -
+             * and the entitlement list costs a usage lookup per feature.
+             *
+             * This one stays because the impersonation dialog needs the people
+             * to choose between before any table has loaded.
+             */
             'members' => $this->membersPayload($workspace),
-            'entitlements' => $this->entitlementsPayload($workspace, $entitlements),
-            'overrides' => $this->overridesPayload($workspace),
-            'invoices' => $this->invoicesPayload($workspace),
             // What the actions on this page can offer.
             'plans' => $this->planOptions(),
             'features' => $this->featureOptions(),
@@ -142,80 +149,120 @@ class CustomerService implements CustomerContract
         ];
     }
 
-    private function membersPayload(Workspace $workspace): array
-    {
-        return $workspace->members()->with('user')->get()
-            ->map(fn (WorkspaceMember $member) => [
-                'id' => $member->id,
-                // Impersonation targets the PERSON, not the membership row.
-                'user_id' => $member->user_id,
-                'name' => $member->user?->name,
-                'email' => $member->user?->email,
-                'role' => $member->role->value,
-                'role_label' => $member->role->label(),
-                'is_owner' => $member->role === WorkspaceRole::Owner,
-                'joined_at' => $member->joined_at,
-            ])
-            ->values()
-            ->all();
-    }
+    /** The detail page's lists, and the only values paginateDetail() accepts. */
+    public const LISTS = ['members', 'entitlements', 'overrides', 'invoices'];
 
     /**
-     * Usage against every limit, so support does not have to ask which one broke.
+     * One of the detail page's four lists, paginated for its table.
      *
-     * @param  Collection<int, WorkspaceEntitlement>  $entitlements
+     * Each reuses the SAME presenter the page payload uses, so a column cannot
+     * mean one thing on first render and another after paging.
      */
-    private function entitlementsPayload(Workspace $workspace, Collection $entitlements): array
+    public function paginateDetail(Workspace $workspace, string $list, ?string $search, int $perPage): LengthAwarePaginator
     {
-        return $entitlements
-            ->map(fn (WorkspaceEntitlement $entitlement) => [
-                'feature' => $entitlement->feature_key,
-                'used' => $this->usage->current($workspace, $entitlement->feature_key),
-                'limit' => $entitlement->value,
-                'source' => $entitlement->source->value,
-            ])
-            ->values()
-            ->all();
+        $perPage = max(1, $perPage);
+
+        return match ($list) {
+            'members' => $workspace->members()
+                ->with('user')
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->whereHas('user', fn (Builder $q) => $q
+                        ->where('name', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%")))
+                ->paginate($perPage)
+                ->through(fn (WorkspaceMember $member) => $this->presentMember($member)),
+
+            'entitlements' => WorkspaceEntitlement::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->where('feature_key', 'like', "%{$term}%"))
+                ->orderBy('feature_key')
+                ->paginate($perPage)
+                ->through(fn (WorkspaceEntitlement $entitlement) => $this->presentEntitlement($workspace, $entitlement)),
+
+            'overrides' => WorkspaceEntitlementOverride::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->live()
+                ->with(['feature', 'grantedByAdmin'])
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->whereHas('feature', fn (Builder $q) => $q->where('key', 'like', "%{$term}%")))
+                ->paginate($perPage)
+                ->through(fn (WorkspaceEntitlementOverride $override) => $this->presentOverride($override)),
+
+            'invoices' => InvoiceSummary::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->where('number', 'like', "%{$term}%")
+                    ->orWhere('status', 'like', "%{$term}%"))
+                ->orderByDesc('issued_at')
+                ->paginate($perPage)
+                ->through(fn (InvoiceSummary $invoice) => $this->presentInvoice($invoice)),
+
+            default => throw new InvalidArgumentException("Unknown customer list [{$list}]."),
+        };
     }
 
-    private function overridesPayload(Workspace $workspace): array
+    /** @return array<string, mixed> */
+    private function presentMember(WorkspaceMember $member): array
     {
-        return WorkspaceEntitlementOverride::withoutWorkspaceScope()
-            ->where('workspace_id', $workspace->id)
-            ->live()
-            ->with(['feature', 'grantedByAdmin'])
-            ->get()
-            ->map(fn (WorkspaceEntitlementOverride $override) => [
-                'id' => $override->id,
-                'feature' => $override->feature->key,
-                'feature_name' => $override->feature->name,
-                'value' => $override->value,
-                'reason' => $override->reason,
-                'granted_by' => $override->grantedByAdmin?->name,
-                'expires_at' => $override->expires_at,
-            ])
-            ->values()
-            ->all();
+        return [
+            'id' => $member->id,
+            // Impersonation targets the PERSON, not the membership row.
+            'user_id' => $member->user_id,
+            'name' => $member->user?->name,
+            'email' => $member->user?->email,
+            'role' => $member->role->value,
+            'role_label' => $member->role->label(),
+            'is_owner' => $member->role === WorkspaceRole::Owner,
+            'joined_at' => $member->joined_at,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function presentEntitlement(Workspace $workspace, WorkspaceEntitlement $entitlement): array
+    {
+        return [
+            // Doubles as the table's row id: one entitlement per feature key.
+            'feature' => $entitlement->feature_key,
+            'used' => $this->usage->current($workspace, $entitlement->feature_key),
+            'limit' => $entitlement->value,
+            'source' => $entitlement->source->value,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function presentOverride(WorkspaceEntitlementOverride $override): array
+    {
+        return [
+            'id' => $override->id,
+            'feature' => $override->feature->key,
+            'feature_name' => $override->feature->name,
+            'value' => $override->value,
+            'reason' => $override->reason,
+            'granted_by' => $override->grantedByAdmin?->name,
+            'expires_at' => $override->expires_at,
+        ];
     }
 
     /** Section 8: we keep a summary; the document itself stays with the provider. */
-    private function invoicesPayload(Workspace $workspace): array
+    private function presentInvoice(InvoiceSummary $invoice): array
     {
-        return InvoiceSummary::withoutWorkspaceScope()
-            ->where('workspace_id', $workspace->id)
-            ->orderByDesc('issued_at')
-            ->limit(self::RECENT_INVOICES)
-            ->get()
-            ->map(fn (InvoiceSummary $invoice) => [
-                'id' => $invoice->id,
-                'number' => $invoice->number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'total_minor' => $invoice->total_minor,
-                'issued_at' => $invoice->issued_at,
-                'paid_at' => $invoice->paid_at,
-                'hosted_url' => $invoice->hosted_url,
-            ])
+        return [
+            'id' => $invoice->id,
+            'number' => $invoice->number,
+            'status' => $invoice->status,
+            'currency' => $invoice->currency,
+            'total_minor' => $invoice->total_minor,
+            'issued_at' => $invoice->issued_at,
+            'paid_at' => $invoice->paid_at,
+            'hosted_url' => $invoice->hosted_url,
+        ];
+    }
+
+    private function membersPayload(Workspace $workspace): array
+    {
+        return $workspace->members()->with('user')->get()
+            ->map(fn (WorkspaceMember $member) => $this->presentMember($member))
             ->values()
             ->all();
     }

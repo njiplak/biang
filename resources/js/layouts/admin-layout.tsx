@@ -186,9 +186,7 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                                             admin.customer.index.url(),
                                         )}
                                     >
-                                        <Link
-                                            href={admin.customer.index.url()}
-                                        >
+                                        <Link href={admin.customer.index.url()}>
                                             <Building2 />
                                             <span>Customers</span>
                                         </Link>
@@ -226,11 +224,11 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                                     <SidebarMenuButton
                                         asChild
                                         isActive={isMenuActive(
-                                            admin['billing-ops'].index.url(),
+                                            admin.billingOps.index.url(),
                                         )}
                                     >
                                         <Link
-                                            href={admin['billing-ops'].index.url()}
+                                            href={admin.billingOps.index.url()}
                                         >
                                             <Wallet />
                                             <span>Billing ops</span>
@@ -270,7 +268,9 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                                             admin.scheduler.index.url(),
                                         )}
                                     >
-                                        <Link href={admin.scheduler.index.url()}>
+                                        <Link
+                                            href={admin.scheduler.index.url()}
+                                        >
                                             <Timer />
                                             <span>Scheduled tasks</span>
                                         </Link>

@@ -1,18 +1,16 @@
 import { Head } from '@inertiajs/react';
+import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 import { AlertTriangle, CheckCircle2, CircleSlash } from 'lucide-react';
+import { useCallback } from 'react';
 
+import NextTable from '@/components/next-table';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import AdminLayout from '@/layouts/admin-layout';
-import type { SchedulerOverview } from '@/types/catalog';
+import admin from '@/routes/admin';
+import type { Base } from '@/types/base';
+import type { ScheduledTaskRow, SchedulerOverview } from '@/types/catalog';
+
+const helper = createColumnHelper<ScheduledTaskRow>();
 
 function when(value: string | null) {
     if (!value) return 'Never';
@@ -34,6 +32,73 @@ export default function SchedulerIndex({
     is_registered,
     unhealthy_count,
 }: SchedulerOverview) {
+    const load = useCallback(
+        async (params: Record<string, any>) =>
+            (await window
+                .fetch(admin.scheduler.fetch({ query: params }).url, {
+                    headers: { Accept: 'application/json' },
+                })
+                .then((r) => r.json())) as Base<ScheduledTaskRow[]>,
+        [],
+    );
+
+    const columns: ColumnDef<ScheduledTaskRow, any>[] = [
+        helper.accessor('name', {
+            id: 'name',
+            header: 'Task',
+            enableColumnFilter: false,
+            cell: (ctx) => (
+                <span className="font-medium">{ctx.row.original.name}</span>
+            ),
+        }),
+        helper.display({
+            id: 'schedule',
+            header: 'Schedule',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    <code>{ctx.row.original.cron_expression}</code>
+                    <span className="ml-2 text-xs">
+                        +{ctx.row.original.grace_time_in_minutes}m grace
+                    </span>
+                </span>
+            ),
+        }),
+        helper.display({
+            id: 'last_finished',
+            header: 'Last finished',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {when(ctx.row.original.last_finished_at)}
+                </span>
+            ),
+        }),
+        helper.display({
+            id: 'expected_by',
+            header: 'Expected by',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {when(ctx.row.original.expected_by)}
+                </span>
+            ),
+        }),
+        helper.display({
+            id: 'state',
+            header: 'State',
+            cell: (ctx) => {
+                const task = ctx.row.original;
+                if (task.is_healthy) return <Badge>Healthy</Badge>;
+
+                // Failed and overdue are different problems: one ran and threw,
+                // the other never ran at all.
+                return (
+                    <Badge variant="destructive">
+                        {task.has_failed ? 'Failed' : 'Overdue'}
+                    </Badge>
+                );
+            },
+        }),
+    ];
+
     return (
         <div className="flex flex-col gap-4">
             <Head title="Scheduled tasks" />
@@ -81,68 +146,12 @@ export default function SchedulerIndex({
                 </div>
             )}
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">Tasks</CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto p-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Task</TableHead>
-                                <TableHead>Schedule</TableHead>
-                                <TableHead>Last finished</TableHead>
-                                <TableHead>Expected by</TableHead>
-                                <TableHead>State</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {tasks.length === 0 && (
-                                <TableRow>
-                                    <TableCell
-                                        colSpan={5}
-                                        className="text-muted-foreground"
-                                    >
-                                        Nothing registered.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {tasks.map((task) => (
-                                <TableRow key={task.id}>
-                                    <TableCell className="font-medium">
-                                        {task.name}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        <code>{task.cron_expression}</code>
-                                        <span className="ml-2 text-xs">
-                                            +{task.grace_time_in_minutes}m grace
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {when(task.last_finished_at)}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {when(task.expected_by)}
-                                    </TableCell>
-                                    <TableCell>
-                                        {task.is_healthy ? (
-                                            <Badge>Healthy</Badge>
-                                        ) : task.has_failed ? (
-                                            <Badge variant="destructive">
-                                                Failed
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="destructive">
-                                                Overdue
-                                            </Badge>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <NextTable<ScheduledTaskRow>
+                id="id"
+                columns={columns}
+                load={load}
+                searchPlaceholder="Search tasks..."
+            />
         </div>
     );
 }

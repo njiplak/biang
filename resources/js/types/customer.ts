@@ -112,10 +112,10 @@ export type CustomerOverview = {
     workspace: CustomerWorkspace;
     subscription: CustomerSubscription | null;
     seats: { used: number; limit: number | null };
+    // Only the people are sent with the page - the impersonation dialog needs
+    // them up front. Limits, overrides and invoices are tables that load
+    // themselves, so sending them here too would be doing the work twice.
     members: CustomerMember[];
-    entitlements: CustomerEntitlement[];
-    overrides: CustomerOverride[];
-    invoices: CustomerInvoice[];
     plans: PlanOption[];
     features: FeatureOption[];
 };

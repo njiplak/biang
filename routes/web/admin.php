@@ -85,8 +85,10 @@ Route::prefix('admin')->as('admin.')->group(function () {
 
         // Section 16: trial-ending emails are a launch blocker, and they are
         // sent by a scheduled command.
-        Route::get('scheduler', [SchedulerController::class, 'index'])
-            ->name('scheduler.index')->middleware('permission:setting.view');
+        Route::prefix('scheduler')->as('scheduler.')->middleware('permission:setting.view')->group(function () {
+            Route::get('/', [SchedulerController::class, 'index'])->name('index');
+            Route::get('fetch', [SchedulerController::class, 'fetch'])->name('fetch');
+        });
 
         /*
          * Section 3: staff accounts. `staff.manage` was seeded with nothing
@@ -106,6 +108,7 @@ Route::prefix('admin')->as('admin.')->group(function () {
          */
         Route::prefix('billing-ops')->as('billing-ops.')->middleware('permission:revenue.view')->group(function () {
             Route::get('/', [BillingOpsController::class, 'index'])->name('index');
+            Route::get('fetch', [BillingOpsController::class, 'fetch'])->name('fetch');
             Route::post('webhooks/{event}/retry', [BillingOpsController::class, 'retry'])->name('retry');
         });
 
@@ -137,6 +140,10 @@ Route::prefix('admin')->as('admin.')->group(function () {
             // not, so a closed workspace can be read but not operated on.
             Route::get('{workspace}', [CustomerController::class, 'show'])
                 ->name('show')->middleware('permission:customer.view')->withTrashed();
+
+            // The detail page's tables. Same gate and same withTrashed as show.
+            Route::get('{workspace}/fetch', [CustomerController::class, 'fetchDetail'])
+                ->name('fetch-detail')->middleware('permission:customer.view')->withTrashed();
 
             Route::post('{workspace}/suspend', [CustomerController::class, 'suspend'])
                 ->name('suspend')->middleware('permission:workspace.suspend');

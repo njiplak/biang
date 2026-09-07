@@ -26,4 +26,11 @@ interface CustomerContract
 
     /** One row of the directory listing. */
     public function summarise(Workspace $workspace): array;
+
+    /**
+     * One of the customer detail page's lists, paginated for its table.
+     *
+     * @throws \InvalidArgumentException when $list is not one of LISTS
+     */
+    public function paginateDetail(Workspace $workspace, string $list, ?string $search, int $perPage): LengthAwarePaginator;
 }

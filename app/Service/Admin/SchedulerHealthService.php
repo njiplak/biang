@@ -4,6 +4,7 @@ namespace App\Service\Admin;
 
 use App\Contract\Admin\SchedulerHealthContract;
 use Cron\CronExpression;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Spatie\ScheduleMonitor\Models\MonitoredScheduledTask;
 use Throwable;
@@ -33,6 +34,17 @@ class SchedulerHealthService implements SchedulerHealthContract
             'is_registered' => $tasks !== [],
             'unhealthy_count' => count(array_filter($tasks, fn (array $t) => ! $t['is_healthy'])),
         ];
+    }
+
+    public function paginate(?string $search, int $perPage): LengthAwarePaginator
+    {
+        $paginator = MonitoredScheduledTask::query()
+            ->when($search, fn ($query, $term) => $query->where('name', 'like', "%{$term}%"))
+            ->orderBy('name')
+            ->paginate(max(1, $perPage));
+
+        // through() maps in place, so paging metadata is preserved.
+        return $paginator->through(fn (MonitoredScheduledTask $task) => $this->present($task));
     }
 
     private function present(MonitoredScheduledTask $task): array

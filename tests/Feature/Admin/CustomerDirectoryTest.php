@@ -133,12 +133,19 @@ it('shows plan, state, seats and members on one screen', function () {
             ->where('subscription.billing_source', BillingSource::Manual->value)
             ->where('subscription.grant_reason', 'Launch partner')
             ->where('seats.used', 1)
+            /*
+             * Members travel with the page because the impersonation dialog
+             * needs them before any table has loaded. Limits, overrides and
+             * invoices deliberately do NOT: they are tables that load
+             * themselves, and sending them here as well would compute each one
+             * twice on every page load.
+             */
             ->has('members', 1)
-            ->has('entitlements')
             ->has('plans')
             ->has('features')
-            ->has('invoices')
-            ->has('overrides'));
+            ->missing('entitlements')
+            ->missing('invoices')
+            ->missing('overrides'));
 });
 
 /*

@@ -38,9 +38,12 @@ import type { CustomerWorkspace, FeatureOption } from '@/types/customer';
 export function OverrideDialog({
     workspace,
     features,
+    onSaved,
 }: {
     workspace: CustomerWorkspace;
     features: FeatureOption[];
+    /** The limits table reads over XHR, so it has to be told to re-read. */
+    onSaved?: () => void;
 }) {
     const [open, setOpen] = useState(false);
     const [unlimited, setUnlimited] = useState(false);
@@ -67,6 +70,7 @@ export function OverrideDialog({
                 setOpen(false);
                 setUnlimited(false);
                 form.reset();
+                onSaved?.();
             },
         });
     };

@@ -1,20 +1,23 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 import { ArrowLeft, ShieldOff, ShieldCheck } from 'lucide-react';
+import { useCallback, useState } from 'react';
+
+import NextTable from '@/components/next-table';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import AdminLayout from '@/layouts/admin-layout';
 import admin from '@/routes/admin';
 import type { SharedData } from '@/types';
-import type { CustomerOverview } from '@/types/customer';
+import type { Base } from '@/types/base';
+import type {
+    CustomerEntitlement,
+    CustomerInvoice,
+    CustomerMember,
+    CustomerOverride,
+    CustomerOverview,
+} from '@/types/customer';
 import { GrantPlanDialog } from './actions/grant-plan-dialog';
 import { ImpersonateDialog } from './actions/impersonate-dialog';
 import { ExtendTrialDialog } from './actions/extend-trial-dialog';
@@ -40,19 +43,209 @@ function formatLimit(limit: number | null) {
     return limit === null ? 'Unlimited' : String(limit);
 }
 
+const entitlementHelper = createColumnHelper<CustomerEntitlement>();
+const overrideHelper = createColumnHelper<CustomerOverride>();
+const memberHelper = createColumnHelper<CustomerMember>();
+const invoiceHelper = createColumnHelper<CustomerInvoice>();
+
 export default function CustomerShow({
     workspace,
     subscription,
     seats,
     members,
-    entitlements,
-    overrides,
-    invoices,
     plans,
     features,
 }: CustomerOverview) {
     const { permissions } = usePage<SharedData>().props.auth;
     const can = (permission: string) => permissions.includes(permission);
+
+    // Bumped after an override is granted or revoked, so the tables re-read
+    // rather than showing the state the page was first rendered with.
+    const [refresh, setRefresh] = useState(0);
+
+    /*
+     * One loader for all four lists. They are different views of the same
+     * customer, so they share an endpoint and differ only by `list`, which the
+     * server validates against its own allow-list.
+     */
+    const detail = useCallback(
+        <T,>(list: string) =>
+            async (params: Record<string, any>) =>
+                (await window
+                    .fetch(
+                        // The route parameter and the query string are separate
+                        // arguments; folding them into one object puts `query`
+                        // in the URL path instead of after the `?`.
+                        admin.customer.fetchDetail(
+                            { workspace: workspace.ulid },
+                            { query: { ...params, list } },
+                        ).url,
+                        { headers: { Accept: 'application/json' } },
+                    )
+                    .then((r) => r.json())) as Base<T[]>,
+        [workspace.ulid],
+    );
+
+    const entitlementColumns: ColumnDef<CustomerEntitlement, any>[] = [
+        entitlementHelper.accessor('feature', {
+            id: 'feature',
+            header: 'Feature',
+            enableColumnFilter: false,
+        }),
+        entitlementHelper.accessor('used', {
+            id: 'used',
+            header: 'Used',
+            enableColumnFilter: false,
+        }),
+        entitlementHelper.display({
+            id: 'limit',
+            header: 'Limit',
+            cell: (ctx) => formatLimit(ctx.row.original.limit),
+        }),
+        entitlementHelper.display({
+            id: 'source',
+            header: 'From',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {ctx.row.original.source}
+                </span>
+            ),
+        }),
+    ];
+
+    const overrideColumns: ColumnDef<CustomerOverride, any>[] = [
+        overrideHelper.display({
+            id: 'feature',
+            header: 'Feature',
+            cell: (ctx) =>
+                ctx.row.original.feature_name ?? ctx.row.original.feature,
+        }),
+        overrideHelper.display({
+            id: 'value',
+            header: 'Value',
+            cell: (ctx) => formatLimit(ctx.row.original.value),
+        }),
+        overrideHelper.accessor('reason', {
+            id: 'reason',
+            header: 'Reason',
+            enableColumnFilter: false,
+        }),
+        overrideHelper.display({
+            id: 'granted_by',
+            header: 'Granted by',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {ctx.row.original.granted_by ?? '-'}
+                </span>
+            ),
+        }),
+        overrideHelper.display({
+            id: 'expires_at',
+            header: 'Expires',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {ctx.row.original.expires_at
+                        ? formatDate(ctx.row.original.expires_at)
+                        : 'Never'}
+                </span>
+            ),
+        }),
+    ];
+
+    const memberColumns: ColumnDef<CustomerMember, any>[] = [
+        memberHelper.display({
+            id: 'name',
+            header: 'Name',
+            cell: (ctx) => ctx.row.original.name ?? '-',
+        }),
+        memberHelper.display({
+            id: 'email',
+            header: 'Email',
+            cell: (ctx) => ctx.row.original.email ?? '-',
+        }),
+        memberHelper.display({
+            id: 'role',
+            header: 'Role',
+            cell: (ctx) => (
+                <span>
+                    {ctx.row.original.role_label}
+                    {/* Section 9: the owner is who hears about card problems. */}
+                    {ctx.row.original.is_owner && (
+                        <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                            billing contact
+                        </span>
+                    )}
+                </span>
+            ),
+        }),
+        memberHelper.display({
+            id: 'joined_at',
+            header: 'Joined',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {formatDate(ctx.row.original.joined_at)}
+                </span>
+            ),
+        }),
+    ];
+
+    const invoiceColumns: ColumnDef<CustomerInvoice, any>[] = [
+        invoiceHelper.display({
+            id: 'number',
+            header: 'Invoice',
+            cell: (ctx) => {
+                const invoice = ctx.row.original;
+                const label = invoice.number ?? invoice.id;
+
+                // Section 8: the document itself is the provider's, so the only
+                // thing we can offer is a link out to it.
+                return invoice.hosted_url ? (
+                    <a
+                        className="underline"
+                        href={invoice.hosted_url}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        {label}
+                    </a>
+                ) : (
+                    label
+                );
+            },
+        }),
+        invoiceHelper.accessor('status', {
+            id: 'status',
+            header: 'Status',
+            enableColumnFilter: false,
+        }),
+        invoiceHelper.display({
+            id: 'total',
+            header: 'Total',
+            cell: (ctx) =>
+                formatMoney(
+                    ctx.row.original.total_minor,
+                    ctx.row.original.currency,
+                ),
+        }),
+        invoiceHelper.display({
+            id: 'issued_at',
+            header: 'Issued',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {formatDate(ctx.row.original.issued_at)}
+                </span>
+            ),
+        }),
+        invoiceHelper.display({
+            id: 'paid_at',
+            header: 'Paid',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {formatDate(ctx.row.original.paid_at)}
+                </span>
+            ),
+        }),
+    ];
 
     const isDeleted = workspace.state === 'deleted';
     const isSuspended = workspace.state === 'suspended';
@@ -107,6 +300,7 @@ export default function CustomerShow({
                             <OverrideDialog
                                 workspace={workspace}
                                 features={features}
+                                onSaved={() => setRefresh((n) => n + 1)}
                             />
                         )}
                         {can('customer.impersonate') && members.length > 0 && (
@@ -258,217 +452,46 @@ export default function CustomerShow({
             </div>
 
             {/* Section 5: usage against EVERY limit, not just a breached one. */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">Limits and usage</CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto p-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Feature</TableHead>
-                                <TableHead>Used</TableHead>
-                                <TableHead>Limit</TableHead>
-                                <TableHead>From</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {entitlements.length === 0 && (
-                                <TableRow>
-                                    <TableCell
-                                        colSpan={4}
-                                        className="text-muted-foreground"
-                                    >
-                                        No entitlements resolved yet.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {entitlements.map((entitlement) => (
-                                <TableRow key={entitlement.feature}>
-                                    <TableCell>{entitlement.feature}</TableCell>
-                                    <TableCell>{entitlement.used}</TableCell>
-                                    <TableCell>
-                                        {formatLimit(entitlement.limit)}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {entitlement.source}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <NextTable<CustomerEntitlement>
+                id="feature"
+                title="Limits and usage"
+                description="Every limit this workspace resolves against, not just one it has breached."
+                columns={entitlementColumns}
+                load={detail<CustomerEntitlement>('entitlements')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search features..."
+            />
 
-            {overrides.length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-base">
-                            Staff overrides
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="overflow-x-auto p-0">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Feature</TableHead>
-                                    <TableHead>Value</TableHead>
-                                    <TableHead>Reason</TableHead>
-                                    <TableHead>Granted by</TableHead>
-                                    <TableHead>Expires</TableHead>
-                                    <TableHead />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {overrides.map((override) => (
-                                    <TableRow key={override.id}>
-                                        <TableCell>
-                                            {override.feature_name}
-                                        </TableCell>
-                                        <TableCell>
-                                            {formatLimit(override.value)}
-                                        </TableCell>
-                                        <TableCell>{override.reason}</TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                            {override.granted_by ?? '-'}
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                            {formatDate(override.expires_at)}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            {can('billing.override') &&
-                                                !isDeleted && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-red-600 hover:text-red-600"
-                                                        onClick={() =>
-                                                            router.delete(
-                                                                admin.customer.override.destroy(
-                                                                    {
-                                                                        workspace:
-                                                                            workspace.ulid,
-                                                                        override:
-                                                                            override.id,
-                                                                    },
-                                                                ).url,
-                                                            )
-                                                        }
-                                                    >
-                                                        Revoke
-                                                    </Button>
-                                                )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-            )}
+            <NextTable<CustomerOverride>
+                id="id"
+                title="Staff overrides"
+                description="Section 10: a limit lifted for this one customer, and who signed it off."
+                columns={overrideColumns}
+                load={detail<CustomerOverride>('overrides')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search features..."
+            />
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">
-                        People ({members.length})
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto p-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Role</TableHead>
-                                <TableHead>Joined</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {members.map((member) => (
-                                <TableRow key={member.id}>
-                                    <TableCell>{member.name ?? '-'}</TableCell>
-                                    <TableCell>{member.email ?? '-'}</TableCell>
-                                    <TableCell>
-                                        {member.role_label}
-                                        {member.is_owner && (
-                                            <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                                                billing contact
-                                            </span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDate(member.joined_at)}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <NextTable<CustomerMember>
+                id="id"
+                title="People"
+                description="Everyone with access, and the role deciding what they may do."
+                columns={memberColumns}
+                load={detail<CustomerMember>('members')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search by name or email..."
+            />
 
             {/* Section 8: we keep a summary; the document stays with the provider. */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">Payment history</CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto p-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Invoice</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Total</TableHead>
-                                <TableHead>Issued</TableHead>
-                                <TableHead>Paid</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {invoices.length === 0 && (
-                                <TableRow>
-                                    <TableCell
-                                        colSpan={5}
-                                        className="text-muted-foreground"
-                                    >
-                                        No invoices. A workspace that has never
-                                        paid has none.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {invoices.map((invoice) => (
-                                <TableRow key={invoice.id}>
-                                    <TableCell>
-                                        {invoice.hosted_url ? (
-                                            <a
-                                                className="underline"
-                                                href={invoice.hosted_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                            >
-                                                {invoice.number ?? invoice.id}
-                                            </a>
-                                        ) : (
-                                            (invoice.number ?? invoice.id)
-                                        )}
-                                    </TableCell>
-                                    <TableCell>{invoice.status}</TableCell>
-                                    <TableCell>
-                                        {formatMoney(
-                                            invoice.total_minor,
-                                            invoice.currency,
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDate(invoice.issued_at)}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDate(invoice.paid_at)}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <NextTable<CustomerInvoice>
+                id="id"
+                title="Payment history"
+                description="A summary of what was charged. The invoice document itself lives with the payment provider."
+                columns={invoiceColumns}
+                load={detail<CustomerInvoice>('invoices')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search by number or status..."
+            />
         </div>
     );
 }

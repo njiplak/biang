@@ -18,9 +18,12 @@ use App\Models\Feature;
 use App\Models\PlanPrice;
 use App\Models\Workspace;
 use App\Models\WorkspaceEntitlementOverride;
+use App\Service\Admin\CustomerService;
+use App\Support\TablePayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -92,6 +95,28 @@ class CustomerController extends Controller
     }
 
     // ------------------------------------------------------------ stop abuse
+
+    /**
+     * One of the detail page's lists. Gated on customer.view like show(), and
+     * withTrashed for the same reason: a ticket about a workspace that vanished
+     * is exactly when support needs to read it.
+     */
+    public function fetchDetail(Request $request, Workspace $workspace): JsonResponse
+    {
+        $validated = $request->validate([
+            'list' => ['required', Rule::in(CustomerService::LISTS)],
+        ]);
+
+        return response()->json(TablePayload::from(
+            $this->customers->paginateDetail(
+                $workspace,
+                $validated['list'],
+                $request->string('filter.search')->toString() ?: null,
+                (int) $request->get('per_page', 15),
+            ),
+            fn (array $row) => $row,
+        ));
+    }
 
     public function suspend(SuspendWorkspaceRequest $request, Workspace $workspace): RedirectResponse
     {

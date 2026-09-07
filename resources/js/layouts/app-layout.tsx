@@ -6,7 +6,9 @@ import {
     Settings,
     Users,
 } from 'lucide-react';
+import AnnouncementBanner from '@/components/announcement-banner';
 import AppLogo from '@/components/app-logo';
+import ImpersonationBanner from '@/components/impersonation-banner';
 import WorkspaceBanner from '@/components/workspace-banner';
 import WorkspaceSwitcher from '@/components/workspace-switcher';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -182,6 +184,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 </header>
 
                 <div className="flex flex-1 flex-col gap-4 p-3 sm:p-4 md:p-6">
+                    <ImpersonationBanner />
+                    <AnnouncementBanner />
                     <WorkspaceBanner workspace={current} />
                     {children}
                 </div>

@@ -9,7 +9,7 @@ import {
     destroyBulk,
     fetch as fetchRoute,
     show,
-} from '@/routes/backoffice/setting/setting';
+} from '@/routes/admin/setting/setting';
 import type { Setting } from '@/types/setting';
 
 const helper = createColumnHelper<Setting>();

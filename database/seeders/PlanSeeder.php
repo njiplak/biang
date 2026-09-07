@@ -24,6 +24,19 @@ class PlanSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function () {
+            /*
+             * Section 13.1's value metric, answered: SEATS.
+             *
+             * Not a placeholder - it is the only thing this product has that a
+             * customer consumes, and section 2 describes a workspace shared
+             * with colleagues, which is what seat pricing is for.
+             *
+             * `projects` and `api_calls` remain rows in `features` because they
+             * cost nothing and are ready the moment something meters them. They
+             * are deliberately NOT on any plan: a limit nothing counts can
+             * never be reached, so advertising one is advertising a fiction.
+             * Adding it back is one number in the admin console, no deploy.
+             */
             $free = $this->plan([
                 'code' => 'free',
                 'name' => 'Free',
@@ -32,8 +45,6 @@ class PlanSeeder extends Seeder
                 'sort_order' => 10,
             ], [
                 Features::SEATS => 2,
-                'projects' => 3,
-                'api_calls' => 1_000,
             ]);
 
             // A free plan never reaches Dodo (section 12), so it has no price row.
@@ -46,8 +57,6 @@ class PlanSeeder extends Seeder
                 'sort_order' => 20,
             ], [
                 Features::SEATS => 5,
-                'projects' => 25,
-                'api_calls' => 50_000,
             ]);
 
             $this->price($starter, BillingInterval::Month, 1900);
@@ -60,8 +69,6 @@ class PlanSeeder extends Seeder
                 'sort_order' => 30,
             ], [
                 Features::SEATS => 25,
-                'projects' => null, // unlimited
-                'api_calls' => 500_000,
             ]);
 
             $this->price($pro, BillingInterval::Month, 4900);

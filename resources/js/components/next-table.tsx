@@ -369,8 +369,6 @@ function NextTable<T>({
 
             const result = await load(params);
 
-            console.log(result);
-
             setData(result);
             setPagination({
                 pageIndex: result.current_page ? result.current_page - 1 : 0,

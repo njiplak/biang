@@ -1,163 +1,143 @@
-/* shadcn/ui theme — SAP Fiori "Horizon" flavored (Tailwind v4)
- * Drop-in replacement for the default app.css / index.css.
- *
- * Signature move vs. stock shadcn: the canvas is a cool gray shell and
- * cards are white, rather than everything being white. That single
- * inversion is most of what makes an app read as "Fiori".
- *
- * Optional, for the full look: SAP ships the "72" typeface. If you have
- * it licensed, add to @theme inline below:
- *   --font-sans: "72", "72full", Arial, Helvetica, sans-serif;
- */
+@import 'tailwindcss';
 
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tw-animate-css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
 @custom-variant dark (&:is(.dark *));
 
-/* Morning Horizon (light) */
-:root {
-  --radius: 0.5rem;
+@theme {
+    --font-sans:
+        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
 
-  --background: oklch(0.973 0.002 247.8);          /* #f5f6f7 shell */
-  --foreground: oklch(0.291 0.038 250.7);          /* #1d2d3e sapTextColor */
-  --card: oklch(1 0 0);                             /* #ffffff tile */
-  --card-foreground: oklch(0.291 0.038 250.7);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.291 0.038 250.7);
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
 
-  --primary: oklch(0.572 0.213 258.1);              /* #0070f2 sapBrandColor */
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.942 0.003 247.9);            /* #eaecee */
-  --secondary-foreground: oklch(0.291 0.038 250.7);
-  --muted: oklch(0.942 0.003 247.9);
-  --muted-foreground: oklch(0.546 0.047 248.7);     /* #5b738b label */
-  --accent: oklch(0.914 0.008 253.9);               /* #dfe3e8 */
-  --accent-foreground: oklch(0.291 0.038 250.7);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
 
-  --destructive: oklch(0.545 0.220 28.9);           /* #d20a0a sapNegativeColor */
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
 
-  --border: oklch(0.885 0 0);                       /* #d9d9d9 group border */
-  --input: oklch(0.830 0.011 248.0);                /* #c2c8ce — fields read heavier in Fiori */
-  --ring: oklch(0.382 0.190 262.9);                 /* #0032a5 focus */
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
 
-  --chart-1: oklch(0.572 0.213 258.1);
-  --chart-2: oklch(0.600 0.120 205.0);
-  --chart-3: oklch(0.583 0.137 149.5);
-  --chart-4: oklch(0.658 0.182 46.9);
-  --chart-5: oklch(0.550 0.190 285.0);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
 
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.291 0.038 250.7);
-  --sidebar-primary: oklch(0.572 0.213 258.1);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.942 0.003 247.9);
-  --sidebar-accent-foreground: oklch(0.291 0.038 250.7);
-  --sidebar-border: oklch(0.885 0 0);
-  --sidebar-ring: oklch(0.382 0.190 262.9);
-}
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
 
-/* Evening Horizon (dark) */
-.dark {
-  --background: oklch(0.253 0.016 252.4);           /* #1d232a */
-  --foreground: oklch(0.942 0.003 247.9);           /* #eaecee */
-  --card: oklch(0.278 0.014 248.3);                 /* #23292f */
-  --card-foreground: oklch(0.942 0.003 247.9);
-  --popover: oklch(0.278 0.014 248.3);
-  --popover-foreground: oklch(0.942 0.003 247.9);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
 
-  --primary: oklch(0.652 0.191 253.0);              /* #1b90ff */
-  --primary-foreground: oklch(0.202 0.013 248.5);
-  --secondary: oklch(0.343 0.023 246.0);            /* #2f3a44 */
-  --secondary-foreground: oklch(0.942 0.003 247.9);
-  --muted: oklch(0.343 0.023 246.0);
-  --muted-foreground: oklch(0.764 0.019 245.5);     /* #a9b4be */
-  --accent: oklch(0.387 0.023 243.5);               /* #3a4650 */
-  --accent-foreground: oklch(0.942 0.003 247.9);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
 
-  --destructive: oklch(0.694 0.196 23.8);           /* #ff5e5e */
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
 
-  --border: oklch(1 0 0 / 14%);
-  --input: oklch(1 0 0 / 20%);
-  --ring: oklch(0.735 0.146 245.4);                 /* #4db1ff */
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
 
-  --chart-1: oklch(0.652 0.191 253.0);
-  --chart-2: oklch(0.700 0.110 205.0);
-  --chart-3: oklch(0.632 0.193 140.7);
-  --chart-4: oklch(0.736 0.172 60.6);
-  --chart-5: oklch(0.680 0.170 285.0);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
 
-  --sidebar: oklch(0.202 0.013 248.5);              /* #12171c shell */
-  --sidebar-foreground: oklch(0.942 0.003 247.9);
-  --sidebar-primary: oklch(0.652 0.191 253.0);
-  --sidebar-primary-foreground: oklch(0.202 0.013 248.5);
-  --sidebar-accent: oklch(0.343 0.023 246.0);
-  --sidebar-accent-foreground: oklch(0.942 0.003 247.9);
-  --sidebar-border: oklch(1 0 0 / 14%);
-  --sidebar-ring: oklch(0.735 0.146 245.4);
-}
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-
-  /* Extra Fiori semantics — no shadcn equivalent, but you will want them
-     for status cells, object headers and KPI tiles. */
-  --color-positive: var(--positive);
-  --color-critical: var(--critical);
-  --color-informative: var(--informative);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
 }
 
 :root {
-  --positive: oklch(0.583 0.137 149.5);             /* #30914c */
-  --critical: oklch(0.658 0.182 46.9);              /* #e76500 */
-  --informative: oklch(0.495 0.203 260.1);          /* #0057d2 */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.87 0 0);
+    --chart-1: oklch(0.646 0.222 41.116);
+    --chart-2: oklch(0.6 0.118 184.704);
+    --chart-3: oklch(0.398 0.07 227.392);
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.87 0 0);
 }
 
 .dark {
-  --positive: oklch(0.632 0.193 140.7);             /* #36a41d */
-  --critical: oklch(0.736 0.172 60.6);              /* #f58b00 */
-  --informative: oklch(0.735 0.146 245.4);          /* #4db1ff */
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.145 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.145 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.396 0.141 25.723);
+    --destructive-foreground: oklch(0.637 0.237 25.331);
+    --border: oklch(0.269 0 0);
+    --input: oklch(0.269 0 0);
+    --ring: oklch(0.439 0 0);
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.269 0 0);
+    --sidebar-ring: oklch(0.439 0 0);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
 }

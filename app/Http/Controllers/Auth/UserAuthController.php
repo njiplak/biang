@@ -11,7 +11,6 @@ use Inertia\Inertia;
 
 class UserAuthController extends Controller
 {
-
     protected UserAuthContract $service;
 
     public function __construct(UserAuthContract $service)
@@ -28,7 +27,6 @@ class UserAuthController extends Controller
         }
     }
 
-
     public function attempt(LoginRequest $request)
     {
         $payload = $request->validated();
@@ -40,6 +38,10 @@ class UserAuthController extends Controller
     public function logout()
     {
         $result = $this->service->logout();
-        return WebResponse::response($result, 'auth.login');
+
+        // `login`, not `auth.login`. The route sits under the `auth` URL prefix
+        // but carries no name prefix, and the wrong name here threw rather than
+        // redirecting - invisible for as long as the route was unreachable.
+        return WebResponse::response($result, 'login');
     }
 }

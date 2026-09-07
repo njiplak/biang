@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\Plan;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -26,9 +28,41 @@ use Inertia\Response;
  */
 class RegisterController extends Controller
 {
-    public function create(): Response
+    /** Read by WorkspaceController when the workspace is finally named. */
+    public const PENDING_PLAN = 'pending_plan_code';
+
+    /** Section 11's "Start trial" button arrives here as ?plan=pro. */
+    public function create(Request $request): Response
     {
-        return Inertia::render('auth/register');
+        $plan = $this->chosenPlan($request->query('plan'));
+
+        // Held in the SESSION, not a hidden form field. The plan has to survive
+        // the redirect to email verification and the separate workspace-naming
+        // step, and a form field would be gone after the first of those - as
+        // well as being something the visitor could edit.
+        $request->session()->put(self::PENDING_PLAN, $plan?->code);
+
+        return Inertia::render('auth/register', [
+            'plan' => $plan === null ? null : [
+                'code' => $plan->code,
+                'name' => $plan->name,
+            ],
+        ]);
+    }
+
+    /**
+     * Only a plan somebody could actually buy. An unknown, retired, hidden or
+     * free code is dropped rather than refused: the visitor followed a link
+     * from another project, and the worst outcome should be an ordinary signup,
+     * not an error page.
+     */
+    private function chosenPlan(?string $code): ?Plan
+    {
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        return Plan::query()->public()->where('is_free', false)->where('code', $code)->first();
     }
 
     public function store(RegisterRequest $request): RedirectResponse

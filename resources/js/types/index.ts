@@ -32,12 +32,34 @@ export type WorkspaceContext = {
     available: WorkspaceSummary[];
 };
 
+/** Section 10: set on every page while staff are inside a customer account. */
+export type ImpersonationContext = {
+    admin_name: string | null;
+    user_name: string | null;
+    user_email: string | null;
+    reason: string;
+    started_at: string;
+};
+
+/** Section 10: what this person should be told right now, in this workspace. */
+export type AnnouncementNotice = {
+    id: number;
+    title: string;
+    body: string;
+    severity: 'info' | 'warning' | 'critical';
+    is_dismissible: boolean;
+};
+
 export type SharedData = {
     name: string;
     auth: Auth;
     // null for guests and everywhere in the admin console. Named `tenancy`
     // because pages pass their own `workspace` and `workspaces` props.
     tenancy: WorkspaceContext | null;
+    // Null whenever nobody is impersonating, which is almost always.
+    impersonation: ImpersonationContext | null;
+    // Empty for guests and in the admin console; staff get their own screen.
+    announcements: AnnouncementNotice[];
     sidebarOpen: boolean;
     [key: string]: unknown;
 };

@@ -9,7 +9,7 @@ import {
     destroyBulk,
     fetch as fetchRoute,
     show,
-} from '@/routes/backoffice/setting/permission';
+} from '@/routes/admin/setting/permission';
 import type { Permission } from '@/types/permission';
 
 const helper = createColumnHelper<Permission>();

@@ -1,0 +1,277 @@
+<?php
+
+namespace App\Service\Admin;
+
+use App\Contract\Admin\CustomerContract;
+use App\Contract\Billing\UsageContract;
+use App\Enums\WorkspaceRole;
+use App\Models\Feature;
+use App\Models\InvoiceSummary;
+use App\Models\Plan;
+use App\Models\PlanPrice;
+use App\Models\Subscription;
+use App\Models\Workspace;
+use App\Models\WorkspaceEntitlement;
+use App\Models\WorkspaceEntitlementOverride;
+use App\Models\WorkspaceMember;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+
+class CustomerService implements CustomerContract
+{
+    /** Section 10: "See their plan, state, seat usage and payment history." */
+    private const RECENT_INVOICES = 10;
+
+    public function __construct(private readonly UsageContract $usage) {}
+
+    /**
+     * Section 10: "Find any customer by email or workspace name."
+     *
+     * `any` includes closed ones - a support ticket about a workspace that
+     * vanished is exactly when staff need to find it - so this reads through
+     * the soft delete. displayState() renders those as Deleted.
+     */
+    public function search(?string $term, int $perPage): LengthAwarePaginator
+    {
+        return Workspace::withTrashed()
+            ->when(filled($term), fn (Builder $query) => $query->where(
+                fn (Builder $match) => $match
+                    ->whereLike('name', "%{$term}%")
+                    ->orWhereLike('slug', "%{$term}%")
+                    ->orWhereHas('users', fn (Builder $user) => $user->whereLike('email', "%{$term}%"))
+            ))
+            // Subscriptions are tenant-scoped. Eager loading them through the
+            // default scope would return nothing whenever the signed-in staff
+            // member also holds a customer session for a different workspace.
+            ->with([
+                'subscription' => fn ($query) => $query->withoutWorkspaceScope()->with('plan'),
+            ])
+            ->withCount('members')
+            ->orderByDesc('created_at')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    public function summarise(Workspace $workspace): array
+    {
+        $state = $workspace->displayState();
+        $subscription = $workspace->relationLoaded('subscription')
+            ? $workspace->getRelation('subscription')
+            : $this->liveSubscription($workspace);
+
+        return [
+            'ulid' => $workspace->ulid,
+            'name' => $workspace->name,
+            'slug' => $workspace->slug,
+            'state' => $state->value,
+            'state_label' => $state->label(),
+            'plan' => $subscription?->plan?->name,
+            'billing_source' => $subscription?->billing_source->value,
+            'members_count' => $workspace->members_count ?? $workspace->members()->count(),
+            'created_at' => $workspace->created_at,
+        ];
+    }
+
+    public function overview(Workspace $workspace): array
+    {
+        $subscription = $this->liveSubscription($workspace, ['plan', 'planPrice', 'grantedByAdmin']);
+        $entitlements = $this->entitlements($workspace);
+
+        return [
+            'workspace' => $this->workspacePayload($workspace),
+            'subscription' => $this->subscriptionPayload($subscription),
+            'seats' => [
+                'used' => $workspace->seatsUsed(),
+                // Null is unlimited. Read off the snapshot rather than the plan,
+                // so an add-on or a staff override is reflected here too.
+                'limit' => $entitlements->firstWhere('feature_key', 'seats')?->value,
+            ],
+            'members' => $this->membersPayload($workspace),
+            'entitlements' => $this->entitlementsPayload($workspace, $entitlements),
+            'overrides' => $this->overridesPayload($workspace),
+            'invoices' => $this->invoicesPayload($workspace),
+            // What the actions on this page can offer.
+            'plans' => $this->planOptions(),
+            'features' => $this->featureOptions(),
+        ];
+    }
+
+    private function workspacePayload(Workspace $workspace): array
+    {
+        $state = $workspace->displayState();
+
+        return [
+            'ulid' => $workspace->ulid,
+            'name' => $workspace->name,
+            'slug' => $workspace->slug,
+            'state' => $state->value,
+            'state_label' => $state->label(),
+            'can_write' => $workspace->canWrite(),
+            'over_limit_features' => $workspace->over_limit_features,
+            'suspended_at' => $workspace->suspended_at,
+            'suspension_reason' => $workspace->suspension_reason,
+            'suspended_by' => $workspace->suspendedByAdmin?->name,
+            'grace_ends_at' => $workspace->grace_ends_at,
+            'purge_after' => $workspace->purge_after,
+            'created_at' => $workspace->created_at,
+        ];
+    }
+
+    private function subscriptionPayload(?Subscription $subscription): ?array
+    {
+        if ($subscription === null) {
+            return null;
+        }
+
+        return [
+            'plan' => $subscription->plan->name,
+            'plan_code' => $subscription->plan->code,
+            'status' => $subscription->status->value,
+            // Section 8: `manual` is a comp with no payment behind it, which is
+            // the first thing support needs to know about a paying-looking row.
+            'billing_source' => $subscription->billing_source->value,
+            'is_missing_provider_record' => $subscription->isMissingProviderRecord(),
+            'trial_ends_at' => $subscription->trial_ends_at,
+            'current_period_end' => $subscription->current_period_end,
+            'amount_minor' => $subscription->planPrice->amount_minor,
+            'currency' => $subscription->planPrice->currency,
+            'interval' => $subscription->planPrice->billing_interval->value,
+            'granted_by' => $subscription->grantedByAdmin?->name,
+            'grant_reason' => $subscription->grant_reason,
+        ];
+    }
+
+    private function membersPayload(Workspace $workspace): array
+    {
+        return $workspace->members()->with('user')->get()
+            ->map(fn (WorkspaceMember $member) => [
+                'id' => $member->id,
+                // Impersonation targets the PERSON, not the membership row.
+                'user_id' => $member->user_id,
+                'name' => $member->user?->name,
+                'email' => $member->user?->email,
+                'role' => $member->role->value,
+                'role_label' => $member->role->label(),
+                'is_owner' => $member->role === WorkspaceRole::Owner,
+                'joined_at' => $member->joined_at,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Usage against every limit, so support does not have to ask which one broke.
+     *
+     * @param  Collection<int, WorkspaceEntitlement>  $entitlements
+     */
+    private function entitlementsPayload(Workspace $workspace, Collection $entitlements): array
+    {
+        return $entitlements
+            ->map(fn (WorkspaceEntitlement $entitlement) => [
+                'feature' => $entitlement->feature_key,
+                'used' => $this->usage->current($workspace, $entitlement->feature_key),
+                'limit' => $entitlement->value,
+                'source' => $entitlement->source->value,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function overridesPayload(Workspace $workspace): array
+    {
+        return WorkspaceEntitlementOverride::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->live()
+            ->with(['feature', 'grantedByAdmin'])
+            ->get()
+            ->map(fn (WorkspaceEntitlementOverride $override) => [
+                'id' => $override->id,
+                'feature' => $override->feature->key,
+                'feature_name' => $override->feature->name,
+                'value' => $override->value,
+                'reason' => $override->reason,
+                'granted_by' => $override->grantedByAdmin?->name,
+                'expires_at' => $override->expires_at,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** Section 8: we keep a summary; the document itself stays with the provider. */
+    private function invoicesPayload(Workspace $workspace): array
+    {
+        return InvoiceSummary::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->orderByDesc('issued_at')
+            ->limit(self::RECENT_INVOICES)
+            ->get()
+            ->map(fn (InvoiceSummary $invoice) => [
+                'id' => $invoice->id,
+                'number' => $invoice->number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'total_minor' => $invoice->total_minor,
+                'issued_at' => $invoice->issued_at,
+                'paid_at' => $invoice->paid_at,
+                'hosted_url' => $invoice->hosted_url,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Every sellable price, including plans hidden from the public pricing
+     * page: granting one by hand is exactly when staff need those.
+     */
+    private function planOptions(): array
+    {
+        return Plan::query()->active()->with(['prices' => fn ($query) => $query->active()])
+            ->orderBy('sort_order')
+            ->get()
+            ->flatMap(fn (Plan $plan) => $plan->prices->map(fn (PlanPrice $price) => [
+                'price_id' => $price->id,
+                'label' => sprintf(
+                    '%s - %s %s / %s',
+                    $plan->name,
+                    $price->currency,
+                    number_format($price->amount_minor / 100, 2),
+                    $price->billing_interval->value,
+                ),
+                'plan_code' => $plan->code,
+                'is_free' => $plan->is_free,
+            ]))
+            ->values()
+            ->all();
+    }
+
+    private function featureOptions(): array
+    {
+        return Feature::query()->orderBy('sort_order')->get()
+            ->map(fn (Feature $feature) => [
+                'id' => $feature->id,
+                'key' => $feature->key,
+                'name' => $feature->name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** @return Collection<int, WorkspaceEntitlement> */
+    private function entitlements(Workspace $workspace): Collection
+    {
+        return WorkspaceEntitlement::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->orderBy('feature_key')
+            ->get();
+    }
+
+    private function liveSubscription(Workspace $workspace, array $with = []): ?Subscription
+    {
+        return Subscription::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->live()
+            ->with($with)
+            ->first();
+    }
+}

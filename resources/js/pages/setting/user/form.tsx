@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
-import { index, store, update } from '@/routes/backoffice/setting/user';
+import { index, store, update } from '@/routes/admin/setting/user';
 import type { User } from '@/types/auth';
 import type { Role } from '@/types/role';
 

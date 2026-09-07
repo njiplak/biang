@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Contract\Admin\AnnouncementContract;
+use App\Http\Controllers\Admin\ImpersonationController;
+use App\Models\ImpersonationSession;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMember;
@@ -57,7 +60,48 @@ class HandleInertiaRequests extends Middleware
             // the same name silently overrides a shared one, and pages
             // legitimately want both `workspace` and `workspaces`.
             'tenancy' => $this->workspaceContext($user),
+            // Section 10: "with an obvious banner saying so". Shared rather than
+            // per-page because there is no page where it would be acceptable to
+            // forget we are inside someone else's account.
+            'impersonation' => $this->impersonationContext($request),
+            // Section 10: "Announce maintenance or a new feature to all
+            // customers." Shared because maintenance is not news that should
+            // wait until they happen to open the right page.
+            'announcements' => $user === null
+                ? []
+                : app(AnnouncementContract::class)->forUser($user, app(CurrentWorkspace::class)->get()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function impersonationContext(Request $request): ?array
+    {
+        if (! $request->hasSession()) {
+            return null;
+        }
+
+        $id = $request->session()->get(ImpersonationController::SESSION_KEY);
+
+        if ($id === null) {
+            return null;
+        }
+
+        $session = ImpersonationSession::with(['adminUser', 'user'])->find($id);
+
+        // A row that has been closed from elsewhere leaves a stale key behind.
+        // Treating that as "not impersonating" is the safe way round: the worst
+        // case is a banner that disappears, not one that never appears.
+        if ($session === null || ! $session->isActive()) {
+            return null;
+        }
+
+        return [
+            'admin_name' => $session->adminUser?->name,
+            'user_name' => $session->user?->name,
+            'user_email' => $session->user?->email,
+            'reason' => $session->reason,
+            'started_at' => $session->started_at,
         ];
     }
 

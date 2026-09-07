@@ -139,3 +139,25 @@ it('throttles repeated failed admin logins', function () {
 
     expect(auth()->guard('admin')->check())->toBeFalse();
 });
+
+/*
+ * admin_users has carried last_login_at and last_login_ip since the table was
+ * created and nothing wrote them. Who was in the console and when is the first
+ * question asked when staff are offboarded, and it cannot be reconstructed
+ * after the fact.
+ */
+it('records when and from where a staff member signed in', function () {
+    $admin = AdminUser::factory()->create(['password' => Hash::make('secret-password')]);
+
+    expect($admin->last_login_at)->toBeNull();
+
+    $this->post(route('admin.attempt'), [
+        'email' => $admin->email,
+        'password' => 'secret-password',
+    ])->assertRedirect(route('admin.dashboard'));
+
+    $fresh = $admin->fresh();
+
+    expect($fresh->last_login_at)->not->toBeNull()
+        ->and($fresh->last_login_ip)->not->toBeNull();
+});

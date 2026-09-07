@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers\Workspace;
 
+use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Workspace\WorkspaceContract;
+use App\Enums\BillingInterval;
+use App\Exceptions\Domain\DomainException;
+use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Workspace\TransferOwnershipRequest;
 use App\Http\Requests\Workspace\WorkspaceRequest;
+use App\Models\Plan;
 use App\Models\Workspace;
 use App\Models\WorkspaceMember;
 use Illuminate\Http\RedirectResponse;
@@ -20,13 +25,50 @@ use Inertia\Response;
  */
 class WorkspaceController extends Controller
 {
-    public function __construct(private readonly WorkspaceContract $service) {}
+    public function __construct(
+        private readonly WorkspaceContract $service,
+        private readonly SubscriptionContract $subscriptions,
+    ) {}
 
     public function store(WorkspaceRequest $request): RedirectResponse
     {
         $workspace = $this->service->create($request->user(), $request->validated('name'));
 
+        $this->startPendingTrial($request, $workspace);
+
         return redirect()->route('workspace.member.index', $workspace);
+    }
+
+    /**
+     * Section 5 Path B: "Start trial" on the marketing site carries a plan
+     * through signup, and this is where it finally lands - the workspace does
+     * not exist until it is named, and a trial belongs to a workspace.
+     *
+     * Failure here must never take the workspace with it. They signed up and
+     * named it; the worst case is that they land on the free tier and start the
+     * trial themselves from the billing page. Section 12's one-trial-per-person
+     * rule reaches us as TrialAlreadyConsumed and is exactly that case.
+     */
+    private function startPendingTrial(WorkspaceRequest $request, Workspace $workspace): void
+    {
+        $code = $request->session()->pull(RegisterController::PENDING_PLAN);
+
+        if ($code === null) {
+            return;
+        }
+
+        $price = Plan::query()->public()->where('code', $code)->first()
+            ?->activePriceFor(BillingInterval::Month, config('billing.default_currency'));
+
+        if ($price === null) {
+            return;
+        }
+
+        try {
+            $this->subscriptions->startTrial($workspace, $price, $request->user());
+        } catch (DomainException $e) {
+            $request->session()->flash('warning', $e->userMessage());
+        }
     }
 
     /**

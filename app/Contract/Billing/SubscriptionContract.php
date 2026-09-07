@@ -21,6 +21,12 @@ interface SubscriptionContract
     /** Section 4: the trial auto-charges on day 15. */
     public function convertTrial(Subscription $subscription): Subscription;
 
+    /**
+     * Section 10: staff extend a trial by hand. Throws TrialNotExtendable when
+     * the workspace is not actually on one.
+     */
+    public function extendTrial(Workspace $workspace, int $days, AdminUser $admin, string $reason): Subscription;
+
     /** Throws DowngradeBlocked when the new plan cannot hold current usage. */
     public function changePlan(Workspace $workspace, PlanPrice $price): Subscription;
 

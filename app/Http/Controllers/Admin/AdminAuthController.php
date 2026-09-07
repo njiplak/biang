@@ -43,6 +43,14 @@ class AdminAuthController extends Controller
         $request->clearRateLimiter();
         $request->session()->regenerate();
 
+        // admin_users carries these two columns and nothing wrote them. Who was
+        // in the console and when is the first question asked when offboarding
+        // staff or reviewing an incident, and it cannot be answered afterwards.
+        Auth::guard('admin')->user()->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ])->save();
+
         return redirect()->intended(route('admin.dashboard'));
     }
 

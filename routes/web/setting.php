@@ -6,7 +6,7 @@ use App\Http\Controllers\Setting\SettingController;
 use App\Http\Controllers\Setting\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::group(['middleware' => 'auth:admin', 'prefix' => 'setting', 'as' => 'backoffice.setting.'], function () {
+Route::group(['middleware' => 'auth:admin', 'prefix' => 'admin/setting', 'as' => 'admin.setting.'], function () {
 
     Route::group(['prefix' => 'setting', 'as' => 'setting.'], function () {
         Route::get('/', [SettingController::class, 'index'])->name('index')->middleware('permission:setting.view');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Contract\Billing\EntitlementContract;
+use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Billing\UsageContract;
 use App\Http\Controllers\Controller;
@@ -20,6 +21,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -37,6 +39,7 @@ class BillingController extends Controller
         private readonly SubscriptionContract $subscriptions,
         private readonly EntitlementContract $entitlements,
         private readonly UsageContract $usage,
+        private readonly PaymentGatewayContract $gateway,
     ) {}
 
     public function index(): Response
@@ -53,6 +56,10 @@ class BillingController extends Controller
             'subscription' => $this->subscriptionPayload($workspace),
             'usage' => $this->usagePayload($workspace),
             'plans' => $this->planPayload(),
+            // Section 11: carried here when somebody already signed in clicks
+            // "Start trial" on the marketing site. Preselects rather than
+            // acting, because starting a trial is their decision to confirm.
+            'preselected_plan' => request()->string('plan')->toString() ?: null,
             // Section 4: only what people actually pay extra for is an add-on,
             // and which ones are on offer depends on the current plan.
             'addons' => $this->addonPayload($workspace),
@@ -110,6 +117,31 @@ class BillingController extends Controller
         );
 
         return back();
+    }
+
+    /**
+     * Section 8: Dodo is merchant of record, so the card form is theirs. We
+     * change nothing here - the subscription becomes real when their webhook
+     * arrives, which is the same path a cancellation on their own page takes.
+     *
+     * CheckoutUnavailable is a DomainException and renders as a message, not an
+     * error page: section 14 phase 3 keeps the product sellable by hand, so a
+     * provider that is not wired up yet is a normal state.
+     */
+    public function checkout(PlanPriceRequest $request): SymfonyResponse
+    {
+        $workspace = $this->workspace();
+
+        $url = $this->gateway->createCheckout(
+            $workspace,
+            PlanPrice::findOrFail($request->validated('plan_price_id')),
+            $request->user(),
+            route('billing.index'),
+            route('billing.index'),
+        );
+
+        // Inertia cannot follow a redirect to another origin on its own.
+        return Inertia::location($url);
     }
 
     public function cancel(): RedirectResponse

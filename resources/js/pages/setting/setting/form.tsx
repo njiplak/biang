@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
-import { index, store, update } from '@/routes/backoffice/setting/setting';
+import { index, store, update } from '@/routes/admin/setting/setting';
 import type { Setting } from '@/types/setting';
 
 type Props = {

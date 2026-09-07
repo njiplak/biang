@@ -9,7 +9,7 @@ import {
     destroyBulk,
     fetch as fetchRoute,
     show,
-} from '@/routes/backoffice/setting/user';
+} from '@/routes/admin/setting/user';
 import type { Role } from '@/types/role';
 import type { User } from '@/types/auth';
 

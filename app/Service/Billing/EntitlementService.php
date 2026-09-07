@@ -3,14 +3,19 @@
 namespace App\Service\Billing;
 
 use App\Contract\Billing\EntitlementContract;
+use App\Contract\Billing\UsageContract;
 use App\Enums\AddonKind;
 use App\Enums\EntitlementSource;
+use App\Exceptions\Domain\LimitReached;
 use App\Exceptions\Domain\NoFreePlanConfigured;
+use App\Models\AdminUser;
+use App\Models\Feature;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Workspace;
 use App\Models\WorkspaceEntitlement;
 use App\Models\WorkspaceEntitlementOverride;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -26,6 +31,8 @@ use Illuminate\Support\Facades\DB;
  */
 class EntitlementService implements EntitlementContract
 {
+    public function __construct(private readonly UsageContract $usage) {}
+
     public function rebuild(Workspace $workspace): void
     {
         DB::transaction(function () use ($workspace) {
@@ -67,6 +74,72 @@ class EntitlementService implements EntitlementContract
         }
 
         return $entitlement->allows($usage);
+    }
+
+    public function assertAllows(Workspace $workspace, string $featureKey, int $wouldBe): void
+    {
+        if ($this->allows($workspace, $featureKey, $wouldBe)) {
+            return;
+        }
+
+        throw new LimitReached($workspace, $featureKey, $this->limitFor($workspace, $featureKey));
+    }
+
+    public function override(
+        Workspace $workspace,
+        Feature $feature,
+        ?int $value,
+        AdminUser $admin,
+        string $reason,
+        ?DateTimeInterface $expiresAt = null,
+    ): WorkspaceEntitlementOverride {
+        return DB::transaction(function () use ($workspace, $feature, $value, $admin, $reason, $expiresAt) {
+            // A partial unique index enforces one live override per feature, and
+            // it counts an EXPIRED row as live because it only tests
+            // `revoked_at IS NULL`. So replacing an override has to revoke the
+            // old row outright - leaning on the live() scope skipping an expired
+            // one would hit the index instead.
+            WorkspaceEntitlementOverride::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->where('feature_id', $feature->id)
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now()]);
+
+            $override = WorkspaceEntitlementOverride::withoutWorkspaceScope()->create([
+                'workspace_id' => $workspace->id,
+                'feature_id' => $feature->id,
+                'value' => $value,
+                'reason' => $reason,
+                'granted_by_admin_id' => $admin->id,
+                'expires_at' => $expiresAt,
+            ]);
+
+            $this->settle($workspace);
+
+            return $override;
+        });
+    }
+
+    public function revokeOverride(WorkspaceEntitlementOverride $override): void
+    {
+        DB::transaction(function () use ($override) {
+            $override->update(['revoked_at' => now()]);
+
+            $this->settle($override->workspace);
+        });
+    }
+
+    /**
+     * Re-derive the snapshot AND section 7's hard block together.
+     *
+     * Raising a limit for a blocked customer has to let them write again in the
+     * same breath - that is the whole point of sales being able to do it - and
+     * lowering one has to apply the block rather than wait for the next write.
+     */
+    private function settle(Workspace $workspace): void
+    {
+        $this->rebuild($workspace);
+        $this->usage->evaluate($workspace);
     }
 
     /** @return array<string, array{value: int|null, source: EntitlementSource}> */

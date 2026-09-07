@@ -27,8 +27,6 @@ class AddonSeeder extends Seeder
     {
         DB::transaction(function () {
             $seats = Feature::firstWhere('key', Features::SEATS);
-            $projects = Feature::firstWhere('key', 'projects');
-
             if ($seats === null) {
                 return;
             }
@@ -43,15 +41,16 @@ class AddonSeeder extends Seeder
             ]);
             $this->price($seat, 900);
 
-            if ($projects !== null) {
-                $unlock = Addon::updateOrCreate(['key' => 'unlimited-projects'], [
-                    'name' => 'Unlimited projects',
-                    'description' => 'Removes the project ceiling.',
-                    'kind' => AddonKind::Unlock,
-                    'feature_id' => $projects->id,
-                ]);
-                $this->price($unlock, 1900);
-            }
+            /*
+             * There was an "Unlimited projects" unlock here at $19/month,
+             * attached to both paid plans and purchasable. Nothing meters
+             * projects and no product surface creates one, so it removed a
+             * ceiling that could never be reached - real money for nothing.
+             *
+             * SubscriptionService now refuses to sell any add-on whose feature
+             * is not in Features::MEASURED, so this cannot come back by hand
+             * through the console either.
+             */
 
             // Section 4 caps paid add-ons at 10 per plan; both paid plans sell these.
             foreach (Plan::where('is_free', false)->get() as $plan) {

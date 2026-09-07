@@ -13,6 +13,7 @@ use App\Exceptions\Domain\AddonNotAvailable;
 use App\Exceptions\Domain\DowngradeBlocked;
 use App\Exceptions\Domain\NoActiveSubscription;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
+use App\Exceptions\Domain\TrialNotExtendable;
 use App\Exceptions\Domain\WorkspaceAlreadySubscribed;
 use App\Models\Addon;
 use App\Models\AddonPrice;
@@ -105,6 +106,45 @@ class SubscriptionService implements SubscriptionContract
             ]);
 
             $this->settle($subscription->workspace, BillingStatus::Active);
+
+            return $subscription->refresh();
+        });
+    }
+
+    /**
+     * Section 10: "Extend a trial. Sales cannot wait for a deploy."
+     *
+     * Entitlements do not move - the customer stays on the same plan, they just
+     * get longer on it - so there is deliberately no settle() here. What changes
+     * is `trial_ends_at`, which drives the countdown banner, the section 16
+     * warning emails, and the hourly converter.
+     */
+    public function extendTrial(Workspace $workspace, int $days, AdminUser $admin, string $reason): Subscription
+    {
+        return DB::transaction(function () use ($workspace, $days, $admin, $reason) {
+            $subscription = $this->liveSubscription($workspace);
+
+            if ($subscription === null || $subscription->status !== SubscriptionStatus::Trialing) {
+                throw new TrialNotExtendable($workspace);
+            }
+
+            // Extend from whichever is later. An in-flight trial GAINS days on
+            // top of what is left; one that has already lapsed - the hourly
+            // converter runs on a schedule, so there is a window - restarts from
+            // now rather than being extended into a date that is still past.
+            $from = $subscription->trial_ends_at?->isFuture()
+                ? $subscription->trial_ends_at
+                : now();
+
+            $subscription->update([
+                'trial_ends_at' => $from->addDays($days),
+                // The same two columns the comp path uses. A trial extension is
+                // a staff grant with a reason, and this records the most recent
+                // one rather than accumulating a history - audit_logs is where
+                // the full trail lands in phase 6.
+                'granted_by_admin_id' => $admin->id,
+                'grant_reason' => $reason,
+            ]);
 
             return $subscription->refresh();
         });
@@ -230,6 +270,19 @@ class SubscriptionService implements SubscriptionContract
     {
         if ($price->archived_at !== null || $addon->archived_at !== null) {
             throw new AddonNotAvailable($addon, 'retired');
+        }
+
+        /*
+         * Section 13.1 leaves the value metric open, and the catalogue carries
+         * features for candidate metrics that nothing meters yet. Selling
+         * capacity in one of those takes real money for a ceiling that can
+         * never be reached, and no refund path notices.
+         *
+         * A rule rather than a data fix, because the console can create an
+         * add-on against any feature at any time.
+         */
+        if ($addon->feature !== null && ! Features::isMeasured($addon->feature->key)) {
+            throw new AddonNotAvailable($addon, 'not measured yet, so there is nothing to sell');
         }
 
         if (! $subscription->plan->addons()->whereKey($addon->id)->exists()) {

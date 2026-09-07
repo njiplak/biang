@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
-import { index, store, update } from '@/routes/backoffice/setting/role';
+import { index, store, update } from '@/routes/admin/setting/role';
 import type { Role } from '@/types/role';
 
 type PermissionItem = {

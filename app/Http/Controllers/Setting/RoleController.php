@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Setting;
 
+use App\Contract\Admin\AuditContract;
 use App\Contract\Setting\RoleContract;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RoleRequest;
@@ -14,7 +15,7 @@ class RoleController extends Controller
 {
     protected RoleContract $service;
 
-    public function __construct(RoleContract $service)
+    public function __construct(RoleContract $service, private readonly AuditContract $audit)
     {
         $this->service = $service;
     }
@@ -32,6 +33,7 @@ class RoleController extends Controller
             withPaginate: true,
             perPage: request()->get('per_page', 10)
         );
+
         return response()->json($data);
     }
 
@@ -45,12 +47,19 @@ class RoleController extends Controller
     public function store(RoleRequest $request)
     {
         $data = $this->service->create($request->validated());
-        return WebResponse::response($data, 'backoffice.setting.role.index');
+        // Guarded: this service layer RETURNS its failures rather than
+        // throwing, so an unguarded record would log actions that never happened.
+        if (! $data instanceof \Exception) {
+            $this->audit->record('role.created', null, $data instanceof \Illuminate\Database\Eloquent\Model ? $data : null);
+        }
+
+        return WebResponse::response($data, 'admin.setting.role.index');
     }
 
     public function show($id)
     {
         $data = $this->service->find($id);
+
         return Inertia::render('setting/role/form', [
             'role' => $data,
             'permissions' => $this->getGroupedPermissions(),
@@ -60,19 +69,37 @@ class RoleController extends Controller
     public function update(RoleRequest $request, $id)
     {
         $data = $this->service->update($id, $request->validated());
-        return WebResponse::response($data, 'backoffice.setting.role.index');
+        // Guarded: this service layer RETURNS its failures rather than
+        // throwing, so an unguarded record would log actions that never happened.
+        if (! $data instanceof \Exception) {
+            $this->audit->record('role.updated', null, $data instanceof \Illuminate\Database\Eloquent\Model ? $data : null);
+        }
+
+        return WebResponse::response($data, 'admin.setting.role.index');
     }
 
     public function destroy($id)
     {
         $data = $this->service->destroy($id);
-        return WebResponse::response($data, 'backoffice.setting.role.index');
+        // Guarded: this service layer RETURNS its failures rather than
+        // throwing, so an unguarded record would log actions that never happened.
+        if (! $data instanceof \Exception) {
+            $this->audit->record('role.deleted', null, $data instanceof \Illuminate\Database\Eloquent\Model ? $data : null);
+        }
+
+        return WebResponse::response($data, 'admin.setting.role.index');
     }
 
     public function destroy_bulk(Request $request)
     {
         $data = $this->service->bulkDeleteByIds($request->ids ?? []);
-        return WebResponse::response($data, 'backoffice.setting.role.index');
+        // Guarded: this service layer RETURNS its failures rather than
+        // throwing, so an unguarded record would log actions that never happened.
+        if (! $data instanceof \Exception) {
+            $this->audit->record('role.bulk_deleted', null, $data instanceof \Illuminate\Database\Eloquent\Model ? $data : null);
+        }
+
+        return WebResponse::response($data, 'admin.setting.role.index');
     }
 
     private function getGroupedPermissions(): array

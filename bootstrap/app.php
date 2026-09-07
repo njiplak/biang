@@ -19,7 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function () {
             $loadRoutes = function ($directory, $middleware) {
-                if (!is_dir($directory)) {
+                if (! is_dir($directory)) {
                     return;
                 }
 
@@ -86,15 +86,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // An unauthenticated visitor to /admin belongs at the admin login, not
         // the customer one - sending them to /auth/login would invite them to
         // sign in with an account that can never reach this section anyway.
-        // Matched on route NAME, not path: the staff console is `admin.*` plus
-        // the older `backoffice.*` screens, which live on a different URL
-        // prefix but the same guard. Keying off the path silently sent those
-        // to the customer login - an account that can never reach them.
-        $middleware->redirectGuestsTo(fn (Request $request) => $request->routeIs('admin.*', 'backoffice.*')
+        // Matched on route NAME, not path: every staff screen is `admin.*`,
+        // which is the whole point of keeping them under one prefix.
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->routeIs('admin.*')
             ? route('admin.login')
             : '/auth/login');
-        // Customers land in their own dashboard. /backoffice is staff-only now.
-        $middleware->redirectUsersTo('/dashboard');
+        /*
+         * Section 11: "Start trial carries the chosen plan through signup."
+         * A visitor who is ALREADY signed in gets bounced off the guest-only
+         * signup page, and without this the plan they picked is dropped in
+         * silence - they land on their dashboard with no idea it was lost.
+         * Billing is where a signed-in person can act on it.
+         */
+        $middleware->redirectUsersTo(fn (Request $request) => $request->routeIs('register') && $request->filled('plan')
+            ? route('billing.index', ['plan' => $request->query('plan')])
+            : '/dashboard');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Domain rules are thrown from the Service layer, never returned, so a

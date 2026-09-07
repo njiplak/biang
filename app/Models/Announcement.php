@@ -42,6 +42,20 @@ class Announcement extends Model
             ->where(fn (Builder $q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()));
     }
 
+    /**
+     * The row-level counterpart to scopeLive, for a model already in memory.
+     * Derived from the clock every time it is asked, because a stored flag
+     * would be wrong the moment `expires_at` passed.
+     */
+    public function isLive(): bool
+    {
+        if ($this->published_at === null || $this->published_at->isFuture()) {
+            return false;
+        }
+
+        return $this->expires_at === null || $this->expires_at->isFuture();
+    }
+
     public function createdByAdmin(): BelongsTo
     {
         return $this->belongsTo(AdminUser::class, 'created_by_admin_id');

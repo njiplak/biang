@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () {
     Route::get('/', [BillingController::class, 'index'])->name('index');
     Route::post('trial', [BillingController::class, 'startTrial'])->name('trial');
+
+    // Section 8: the card form belongs to Dodo. This only hands the customer
+    // over; nothing about our state moves until their webhook arrives.
+    Route::post('checkout', [BillingController::class, 'checkout'])->name('checkout');
     Route::put('plan', [BillingController::class, 'changePlan'])->name('plan');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
 

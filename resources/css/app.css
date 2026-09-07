@@ -1,19 +1,107 @@
+/* shadcn/ui theme — SAP Fiori "Horizon" flavored (Tailwind v4)
+ * Drop-in replacement for the default app.css / index.css.
+ *
+ * Signature move vs. stock shadcn: the canvas is a cool gray shell and
+ * cards are white, rather than everything being white. That single
+ * inversion is most of what makes an app read as "Fiori".
+ *
+ * Optional, for the full look: SAP ships the "72" typeface. If you have
+ * it licensed, add to @theme inline below:
+ *   --font-sans: "72", "72full", Arial, Helvetica, sans-serif;
+ */
+
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@source '../views';
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-
 @custom-variant dark (&:is(.dark *));
 
-/* ==========================================================================
-   Fluent 2 / Windows 11 theme, mapped onto shadcn token names.
-   Accent: Windows default blue (#0078D4 light, #60CDFF dark).
-   Radius: Fluent scale (3 / 4 / 8 / 12 / 16 / 20px).
-   ========================================================================== */
+/* Morning Horizon (light) */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.973 0.002 247.8);          /* #f5f6f7 shell */
+  --foreground: oklch(0.291 0.038 250.7);          /* #1d2d3e sapTextColor */
+  --card: oklch(1 0 0);                             /* #ffffff tile */
+  --card-foreground: oklch(0.291 0.038 250.7);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.291 0.038 250.7);
+
+  --primary: oklch(0.572 0.213 258.1);              /* #0070f2 sapBrandColor */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.942 0.003 247.9);            /* #eaecee */
+  --secondary-foreground: oklch(0.291 0.038 250.7);
+  --muted: oklch(0.942 0.003 247.9);
+  --muted-foreground: oklch(0.546 0.047 248.7);     /* #5b738b label */
+  --accent: oklch(0.914 0.008 253.9);               /* #dfe3e8 */
+  --accent-foreground: oklch(0.291 0.038 250.7);
+
+  --destructive: oklch(0.545 0.220 28.9);           /* #d20a0a sapNegativeColor */
+
+  --border: oklch(0.885 0 0);                       /* #d9d9d9 group border */
+  --input: oklch(0.830 0.011 248.0);                /* #c2c8ce — fields read heavier in Fiori */
+  --ring: oklch(0.382 0.190 262.9);                 /* #0032a5 focus */
+
+  --chart-1: oklch(0.572 0.213 258.1);
+  --chart-2: oklch(0.600 0.120 205.0);
+  --chart-3: oklch(0.583 0.137 149.5);
+  --chart-4: oklch(0.658 0.182 46.9);
+  --chart-5: oklch(0.550 0.190 285.0);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.291 0.038 250.7);
+  --sidebar-primary: oklch(0.572 0.213 258.1);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.942 0.003 247.9);
+  --sidebar-accent-foreground: oklch(0.291 0.038 250.7);
+  --sidebar-border: oklch(0.885 0 0);
+  --sidebar-ring: oklch(0.382 0.190 262.9);
+}
+
+/* Evening Horizon (dark) */
+.dark {
+  --background: oklch(0.253 0.016 252.4);           /* #1d232a */
+  --foreground: oklch(0.942 0.003 247.9);           /* #eaecee */
+  --card: oklch(0.278 0.014 248.3);                 /* #23292f */
+  --card-foreground: oklch(0.942 0.003 247.9);
+  --popover: oklch(0.278 0.014 248.3);
+  --popover-foreground: oklch(0.942 0.003 247.9);
+
+  --primary: oklch(0.652 0.191 253.0);              /* #1b90ff */
+  --primary-foreground: oklch(0.202 0.013 248.5);
+  --secondary: oklch(0.343 0.023 246.0);            /* #2f3a44 */
+  --secondary-foreground: oklch(0.942 0.003 247.9);
+  --muted: oklch(0.343 0.023 246.0);
+  --muted-foreground: oklch(0.764 0.019 245.5);     /* #a9b4be */
+  --accent: oklch(0.387 0.023 243.5);               /* #3a4650 */
+  --accent-foreground: oklch(0.942 0.003 247.9);
+
+  --destructive: oklch(0.694 0.196 23.8);           /* #ff5e5e */
+
+  --border: oklch(1 0 0 / 14%);
+  --input: oklch(1 0 0 / 20%);
+  --ring: oklch(0.735 0.146 245.4);                 /* #4db1ff */
+
+  --chart-1: oklch(0.652 0.191 253.0);
+  --chart-2: oklch(0.700 0.110 205.0);
+  --chart-3: oklch(0.632 0.193 140.7);
+  --chart-4: oklch(0.736 0.172 60.6);
+  --chart-5: oklch(0.680 0.170 285.0);
+
+  --sidebar: oklch(0.202 0.013 248.5);              /* #12171c shell */
+  --sidebar-foreground: oklch(0.942 0.003 247.9);
+  --sidebar-primary: oklch(0.652 0.191 253.0);
+  --sidebar-primary-foreground: oklch(0.202 0.013 248.5);
+  --sidebar-accent: oklch(0.343 0.023 246.0);
+  --sidebar-accent-foreground: oklch(0.942 0.003 247.9);
+  --sidebar-border: oklch(1 0 0 / 14%);
+  --sidebar-ring: oklch(0.735 0.146 245.4);
+}
 
 @theme inline {
-  /* shadcn color contract */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -29,7 +117,6 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -47,419 +134,30 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Fluent additions: bg-control, border-stroke, text-success, etc. */
-  --color-layer: var(--layer);
-  --color-control: var(--control);
-  --color-control-hover: var(--control-hover);
-  --color-control-pressed: var(--control-pressed);
-  --color-control-disabled: var(--control-disabled);
-  --color-subtle-hover: var(--subtle-hover);
-  --color-subtle-pressed: var(--subtle-pressed);
-  --color-stroke: var(--stroke-control);
-  --color-stroke-strong: var(--stroke-strong);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-pressed: var(--accent-pressed);
-  --color-text-disabled: var(--text-disabled);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-info: var(--info);
-
-  /* Fluent corner radii: 4px controls, 8px cards and flyouts */
-  --radius-sm: calc(var(--radius) * 0.375);
-  --radius-md: calc(var(--radius) * 0.5);
-  --radius-lg: var(--radius);
-  --radius-xl: var(--radius);
-  --radius-2xl: calc(var(--radius) * 1.5);
-  --radius-3xl: calc(var(--radius) * 2);
-  --radius-4xl: calc(var(--radius) * 2.5);
-
-  /* Segoe UI Variable on Windows, Inter elsewhere */
-  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable Static Text",
-    "Segoe UI", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI Variable Static Display",
-    "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, "JetBrains Mono",
-    Consolas, monospace;
-
-  /* Fluent elevation ramp: shadow-flyout, shadow-dialog, etc. */
-  --shadow-card: var(--elevation-2);
-  --shadow-raised: var(--elevation-4);
-  --shadow-tooltip: var(--elevation-8);
-  --shadow-flyout: var(--elevation-16);
-  --shadow-dialog: var(--elevation-28);
-  --shadow-window: var(--elevation-64);
-
-  /* Fluent motion */
-  --ease-fluent: cubic-bezier(0.33, 0, 0.67, 1);
-  --ease-fluent-decelerate: cubic-bezier(0.1, 0.9, 0.2, 1);
-  --ease-fluent-accelerate: cubic-bezier(0.9, 0.1, 1, 0.2);
-  --animate-duration-fast: 150ms;
-  --animate-duration-normal: 250ms;
+  /* Extra Fiori semantics — no shadcn equivalent, but you will want them
+     for status cells, object headers and KPI tiles. */
+  --color-positive: var(--positive);
+  --color-critical: var(--critical);
+  --color-informative: var(--informative);
 }
 
 :root {
-  --radius: 0.5rem;
-
-  /* Solid Background Base + Layer (Mica base, card layer sits lighter) */
-  --background: oklch(0.964 0 0);
-  --foreground: oklch(0.222 0 0);
-  --layer: oklch(0.988 0 0);
-  --card: oklch(0.988 0 0);
-  --card-foreground: oklch(0.222 0 0);
-  --popover: oklch(0.982 0 0);
-  --popover-foreground: oklch(0.222 0 0);
-
-  /* Accent (#0078D4) */
-  --primary: oklch(0.568 0.167 251.4);
-  --primary-foreground: oklch(1 0 0);
-  --accent-hover: oklch(0.596 0.157 250);
-  --accent-pressed: oklch(0.638 0.132 248);
-
-  --secondary: oklch(0.946 0 0);
-  --secondary-foreground: oklch(0.222 0 0);
-  --muted: oklch(0.964 0 0);
-  --muted-foreground: oklch(0.478 0 0);
-  --accent: oklch(0.946 0 0);
-  --accent-foreground: oklch(0.222 0 0);
-
-  --destructive: oklch(0.536 0.191 30.1);
-  --destructive-foreground: oklch(1 0 0);
-  --success: oklch(0.523 0.154 142.5);
-  --warning: oklch(0.53 0.115 70);
-  --info: oklch(0.568 0.167 251.4);
-
-  /* Control fills (buttons, inputs, list rows) */
-  --control: oklch(0.994 0 0);
-  --control-hover: oklch(0.973 0 0);
-  --control-pressed: oklch(0.956 0 0);
-  --control-disabled: oklch(0.97 0 0);
-  --control-input-focus: oklch(1 0 0);
-  --subtle-hover: oklch(0.946 0 0);
-  --subtle-pressed: oklch(0.921 0 0);
-  --text-disabled: oklch(0.715 0 0);
-
-  /* Strokes: bottom edge is darker, this is the Fluent control signature */
-  --border: oklch(0.921 0 0);
-  --input: oklch(0.907 0 0);
-  --stroke-control: oklch(0.907 0 0);
-  --stroke-control-bottom: oklch(0.854 0 0);
-  --stroke-strong: oklch(0.633 0 0);
-  --stroke-input-underline: oklch(0.633 0 0);
-
-  /* Focus rectangle: dark outer, light inner */
-  --ring: oklch(0.222 0 0);
-  --focus-inner: oklch(1 0 0);
-
-  --chart-1: oklch(0.568 0.167 251.4);
-  --chart-2: oklch(0.552 0.091 194.5);
-  --chart-3: oklch(0.523 0.154 142.5);
-  --chart-4: oklch(0.588 0.168 42.4);
-  --chart-5: oklch(0.556 0.132 300.9);
-
-  /* Navigation pane sits on the Mica base, content layer floats above it */
-  --sidebar: oklch(0.964 0 0);
-  --sidebar-foreground: oklch(0.222 0 0);
-  --sidebar-primary: oklch(0.568 0.167 251.4);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.946 0 0);
-  --sidebar-accent-foreground: oklch(0.222 0 0);
-  --sidebar-border: oklch(0.921 0 0);
-  --sidebar-ring: oklch(0.222 0 0);
-
-  --elevation-2: 0 1px 2px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
-  --elevation-4: 0 2px 4px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
-  --elevation-8: 0 4px 8px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
-  --elevation-16: 0 8px 16px oklch(0 0 0 / 0.14), 0 0 2px oklch(0 0 0 / 0.12);
-  --elevation-28: 0 14px 28px oklch(0 0 0 / 0.24), 0 0 8px oklch(0 0 0 / 0.2);
-  --elevation-64: 0 32px 64px oklch(0 0 0 / 0.24), 0 0 8px oklch(0 0 0 / 0.2);
-
-  --acrylic-tint: oklch(0.982 0 0 / 0.72);
-  --scrollbar-thumb: oklch(0.633 0 0 / 0.6);
-  --scrollbar-thumb-hover: oklch(0.478 0 0 / 0.8);
+  --positive: oklch(0.583 0.137 149.5);             /* #30914c */
+  --critical: oklch(0.658 0.182 46.9);              /* #e76500 */
+  --informative: oklch(0.495 0.203 260.1);          /* #0057d2 */
 }
 
 .dark {
-  --background: oklch(0.244 0 0);
-  --foreground: oklch(1 0 0);
-  --layer: oklch(0.289 0 0);
-  --card: oklch(0.289 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.294 0 0);
-  --popover-foreground: oklch(1 0 0);
-
-  /* Dark accent (#60CDFF) carries black text, as Windows 11 does */
-  --primary: oklch(0.804 0.122 230.7);
-  --primary-foreground: oklch(0.15 0 0);
-  --accent-hover: oklch(0.76 0.115 231);
-  --accent-pressed: oklch(0.715 0.105 231);
-
-  --secondary: oklch(0.317 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.273 0 0);
-  --muted-foreground: oklch(0.847 0 0);
-  --accent: oklch(0.301 0 0);
-  --accent-foreground: oklch(1 0 0);
-
-  --destructive: oklch(0.791 0.123 13.3);
-  --destructive-foreground: oklch(0.15 0 0);
-  --success: oklch(0.79 0.16 145);
-  --warning: oklch(0.82 0.15 82);
-  --info: oklch(0.804 0.122 230.7);
-
-  --control: oklch(0.301 0 0);
-  --control-hover: oklch(0.321 0 0);
-  --control-pressed: oklch(0.286 0 0);
-  --control-disabled: oklch(0.28 0 0);
-  --control-input-focus: oklch(0.222 0 0);
-  --subtle-hover: oklch(1 0 0 / 6%);
-  --subtle-pressed: oklch(1 0 0 / 4%);
-  --text-disabled: oklch(1 0 0 / 36%);
-
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --stroke-control: oklch(1 0 0 / 9%);
-  --stroke-control-bottom: oklch(0 0 0 / 20%);
-  --stroke-strong: oklch(1 0 0 / 45%);
-  --stroke-input-underline: oklch(1 0 0 / 54%);
-
-  --ring: oklch(1 0 0);
-  --focus-inner: oklch(0 0 0);
-
-  --chart-1: oklch(0.804 0.122 230.7);
-  --chart-2: oklch(0.79 0.11 180);
-  --chart-3: oklch(0.75 0.13 295);
-  --chart-4: oklch(0.82 0.17 80);
-  --chart-5: oklch(0.78 0.16 340);
-
-  --sidebar: oklch(0.244 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.804 0.122 230.7);
-  --sidebar-primary-foreground: oklch(0.15 0 0);
-  --sidebar-accent: oklch(0.301 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(1 0 0);
-
-  --elevation-2: 0 1px 2px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
-  --elevation-4: 0 2px 4px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
-  --elevation-8: 0 4px 8px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
-  --elevation-16: 0 8px 16px oklch(0 0 0 / 0.26), 0 0 2px oklch(0 0 0 / 0.22);
-  --elevation-28: 0 14px 28px oklch(0 0 0 / 0.37), 0 0 8px oklch(0 0 0 / 0.28);
-  --elevation-64: 0 32px 64px oklch(0 0 0 / 0.37), 0 0 8px oklch(0 0 0 / 0.28);
-
-  --acrylic-tint: oklch(0.25 0 0 / 0.78);
-  --scrollbar-thumb: oklch(1 0 0 / 0.4);
-  --scrollbar-thumb-hover: oklch(1 0 0 / 0.6);
+  --positive: oklch(0.632 0.193 140.7);             /* #36a41d */
+  --critical: oklch(0.736 0.172 60.6);              /* #f58b00 */
+  --informative: oklch(0.735 0.146 245.4);          /* #4db1ff */
 }
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-border outline-ring/50;
   }
-
   body {
-    @apply bg-background text-foreground font-sans;
-    /* Mica: a faint accent wash bleeding down from the top of the window */
-    background-image: radial-gradient(
-      130% 90% at 50% 0%,
-      color-mix(in oklab, var(--primary) 6%, transparent) 0%,
-      transparent 62%
-    );
-    background-attachment: fixed;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
+    @apply bg-background text-foreground;
   }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-display);
-    font-weight: 600; /* Fluent titles are Semibold, never Bold */
-    letter-spacing: -0.01em;
-  }
-
-  /* Windows 11 focus rectangle: 2px outer high-contrast ring, 1px inner */
-  :focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 1px var(--focus-inner);
-  }
-
-  ::selection {
-    background-color: color-mix(in oklab, var(--primary) 32%, transparent);
-  }
-
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) transparent;
-  }
-
-  ::-webkit-scrollbar {
-    width: 14px;
-    height: 14px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
-    border: 5px solid transparent;
-    background-clip: content-box;
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover);
-    border-width: 4px;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
-}
-
-@layer components {
-  /* Card / content layer floating above the Mica base */
-  .fluent-surface {
-    background-color: var(--layer);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--elevation-2);
-  }
-
-  /* Standard button: near-white fill, darker bottom stroke, quiet hover */
-  .fluent-control {
-    background-color: var(--control);
-    color: var(--foreground);
-    border: 1px solid var(--stroke-control);
-    border-bottom-color: var(--stroke-control-bottom);
-    border-radius: var(--radius-md);
-    transition: background-color 150ms var(--ease-fluent),
-      border-color 150ms var(--ease-fluent);
-  }
-  .fluent-control:hover {
-    background-color: var(--control-hover);
-  }
-  .fluent-control:active {
-    background-color: var(--control-pressed);
-    border-bottom-color: var(--stroke-control);
-    color: var(--muted-foreground);
-  }
-  .fluent-control:disabled,
-  .fluent-control[aria-disabled="true"] {
-    background-color: var(--control-disabled);
-    color: var(--text-disabled);
-    border-color: var(--border);
-  }
-
-  /* Accent button: Fluent fades the fill rather than darkening it */
-  .fluent-control-accent {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
-    border: 1px solid transparent;
-    border-bottom-color: color-mix(in oklab, black 22%, transparent);
-    border-radius: var(--radius-md);
-    transition: background-color 150ms var(--ease-fluent);
-  }
-  .fluent-control-accent:hover {
-    background-color: var(--accent-hover);
-  }
-  .fluent-control-accent:active {
-    background-color: var(--accent-pressed);
-    border-bottom-color: transparent;
-  }
-
-  /* Subtle button: no chrome until you touch it */
-  .fluent-control-subtle {
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    transition: background-color 150ms var(--ease-fluent);
-  }
-  .fluent-control-subtle:hover {
-    background-color: var(--subtle-hover);
-  }
-  .fluent-control-subtle:active {
-    background-color: var(--subtle-pressed);
-  }
-
-  /* Text field: 1px underline that grows into a 2px accent bar on focus */
-  .fluent-input {
-    background-color: var(--control);
-    border: 1px solid var(--stroke-control);
-    border-radius: var(--radius-md);
-    box-shadow: inset 0 -1px 0 0 var(--stroke-input-underline);
-    transition: background-color 150ms var(--ease-fluent),
-      box-shadow 150ms var(--ease-fluent-decelerate);
-  }
-  .fluent-input:hover {
-    background-color: var(--control-hover);
-  }
-  .fluent-input:focus,
-  .fluent-input:focus-within {
-    background-color: var(--control-input-focus);
-    box-shadow: inset 0 -2px 0 0 var(--primary);
-    outline: none;
-  }
-  .fluent-input::placeholder {
-    color: var(--muted-foreground);
-  }
-
-  /* Flyouts, menus, command bars */
-  .fluent-acrylic {
-    background-color: var(--acrylic-tint);
-    backdrop-filter: blur(30px) saturate(125%);
-    -webkit-backdrop-filter: blur(30px) saturate(125%);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--elevation-16);
-  }
-
-  /* Nav pane item with the sliding accent pill */
-  .fluent-nav-item {
-    position: relative;
-    border-radius: var(--radius-md);
-    transition: background-color 150ms var(--ease-fluent);
-  }
-  .fluent-nav-item:hover {
-    background-color: var(--subtle-hover);
-  }
-  .fluent-nav-item[aria-current],
-  .fluent-nav-item[data-active="true"] {
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-accent-foreground);
-  }
-  .fluent-nav-item[aria-current]::before,
-  .fluent-nav-item[data-active="true"]::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 50%;
-    height: 55%;
-    width: 3px;
-    border-radius: 9999px;
-    background-color: var(--primary);
-    transform: translateY(-50%);
-    animation: fluent-pill 250ms var(--ease-fluent-decelerate);
-  }
-
-  @keyframes fluent-pill {
-    from { height: 0; opacity: 0; }
-    to { height: 55%; opacity: 1; }
-  }
-}
-
-@layer utilities {
-  /* Windows 11 type ramp */
-  .type-caption { font-size: 0.75rem; line-height: 1rem; }
-  .type-body { font-size: 0.875rem; line-height: 1.25rem; }
-  .type-body-strong { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
-  .type-body-large { font-size: 1rem; line-height: 1.5rem; }
-  .type-subtitle { font-family: var(--font-display); font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; }
-  .type-title { font-family: var(--font-display); font-size: 1.75rem; line-height: 2.25rem; font-weight: 600; }
-  .type-title-large { font-family: var(--font-display); font-size: 2.5rem; line-height: 3rem; font-weight: 600; }
-  .type-display { font-family: var(--font-display); font-size: 4.25rem; line-height: 5rem; font-weight: 600; }
-
-  /* Control stroke on any element that already has a border */
-  .stroke-control-bottom { border-bottom-color: var(--stroke-control-bottom); }
 }

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
 import { index, store, update } from '@/routes/backoffice/setting/role';
 import type { Role } from '@/types/role';
@@ -166,4 +166,4 @@ export default function RoleForm({ role, permissions = [] }: Props) {
     );
 }
 
-RoleForm.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+RoleForm.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

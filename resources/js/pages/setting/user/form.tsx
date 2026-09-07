@@ -13,7 +13,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
 import { index, store, update } from '@/routes/backoffice/setting/user';
 import type { User } from '@/types/auth';
@@ -133,4 +133,4 @@ export default function UserForm({ user, roles = [] }: Props) {
     );
 }
 
-UserForm.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+UserForm.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

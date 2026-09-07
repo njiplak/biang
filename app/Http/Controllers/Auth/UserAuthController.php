@@ -22,7 +22,7 @@ class UserAuthController extends Controller
     public function login()
     {
         if (Auth::guard('web')->check()) {
-            return redirect(route('backoffice.index'));
+            return redirect(route('dashboard'));
         } else {
             return Inertia::render('auth/login');
         }
@@ -34,7 +34,7 @@ class UserAuthController extends Controller
         $payload = $request->validated();
         $result = $this->service->login($payload);
 
-        return WebResponse::response($result, 'backoffice.index');
+        return WebResponse::response($result, 'dashboard');
     }
 
     public function logout()

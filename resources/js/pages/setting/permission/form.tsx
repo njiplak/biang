@@ -5,7 +5,7 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
 import { index, store, update } from '@/routes/backoffice/setting/permission';
 import type { Permission } from '@/types/permission';
@@ -65,4 +65,4 @@ export default function PermissionForm({ permission }: Props) {
     );
 }
 
-PermissionForm.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+PermissionForm.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

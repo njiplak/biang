@@ -1,0 +1,141 @@
+<?php
+
+use App\Models\AdminUser;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+
+beforeEach(function () {
+    $this->withoutVite();
+    RateLimiter::clear('staff@example.com|127.0.0.1');
+
+    $this->admin = AdminUser::factory()->create([
+        'email' => 'staff@example.com',
+        'password' => Hash::make('correct-horse'),
+    ]);
+});
+
+it('configures an admin guard that can actually authenticate', function () {
+    expect(fn () => auth()->guard('admin')->check())->not->toThrow(InvalidArgumentException::class);
+});
+
+it('signs a staff member in', function () {
+    $this->post(route('admin.attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'correct-horse',
+    ])->assertRedirect();
+
+    expect(auth()->guard('admin')->check())->toBeTrue()
+        ->and(auth()->guard('admin')->id())->toBe($this->admin->id);
+});
+
+it('rejects a wrong password', function () {
+    $this->post(route('admin.attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'wrong',
+    ])->assertSessionHasErrors();
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+// A deactivated staff member is the offboarding path - the row stays for the
+// audit trail, but the login has to stop working immediately.
+it('refuses a deactivated staff account', function () {
+    $this->admin->update(['is_active' => false]);
+
+    $this->post(route('admin.attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'correct-horse',
+    ])->assertSessionHasErrors();
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+it('refuses a soft deleted staff account', function () {
+    $this->admin->delete();
+
+    $this->post(route('admin.attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'correct-horse',
+    ])->assertSessionHasErrors();
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+// ---------------------------------------------------------------------------
+// Section 3: "A customer account can never reach admin functions." These four
+// are the whole point of a separate table and guard.
+// ---------------------------------------------------------------------------
+
+it('refuses customer credentials at the admin login', function () {
+    User::factory()->create(['email' => 'customer@example.com', 'password' => Hash::make('secret-pass')]);
+
+    $this->post(route('admin.attempt'), [
+        'email' => 'customer@example.com',
+        'password' => 'secret-pass',
+    ])->assertSessionHasErrors();
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+it('refuses staff credentials at the customer login', function () {
+    $this->post(route('attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'correct-horse',
+    ])->assertSessionHasErrors();
+
+    expect(auth()->guard('web')->check())->toBeFalse();
+});
+
+it('does not make a signed in customer an admin', function () {
+    $customer = User::factory()->create();
+
+    $this->actingAs($customer)->get('/admin');
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+it('sends a guest hitting an admin page to the admin login, not the customer one', function () {
+    $this->get('/admin')->assertRedirect(route('admin.login'));
+});
+
+// Both guards live in one session on purpose: impersonation needs the staff
+// member to stay authenticated as staff while acting as the customer.
+it('allows both guards to hold a session at once', function () {
+    $customer = User::factory()->create();
+
+    $this->actingAs($this->admin, 'admin')->actingAs($customer, 'web');
+
+    expect(auth()->guard('admin')->check())->toBeTrue()
+        ->and(auth()->guard('web')->check())->toBeTrue()
+        ->and(auth()->guard('admin')->user())->toBeInstanceOf(AdminUser::class)
+        ->and(auth()->guard('web')->user())->toBeInstanceOf(User::class);
+});
+
+it('signs a staff member out without touching the customer session', function () {
+    $customer = User::factory()->create();
+    $this->actingAs($this->admin, 'admin')->actingAs($customer, 'web');
+
+    $this->post(route('admin.logout'))->assertRedirect();
+
+    expect(auth()->guard('admin')->check())->toBeFalse()
+        ->and(auth()->guard('web')->check())->toBeTrue();
+});
+
+// The existing customer login never calls its own rate limiter. A brand new
+// admin login must not repeat that.
+it('throttles repeated failed admin logins', function () {
+    foreach (range(1, 5) as $ignored) {
+        $this->post(route('admin.attempt'), [
+            'email' => 'staff@example.com',
+            'password' => 'wrong',
+        ]);
+    }
+
+    $this->post(route('admin.attempt'), [
+        'email' => 'staff@example.com',
+        'password' => 'correct-horse',
+    ])->assertSessionHasErrors('email');
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});

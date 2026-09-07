@@ -4,14 +4,23 @@ export type User = {
     email: string;
     avatar?: string;
     email_verified_at: string | null;
-    two_factor_enabled?: boolean;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;
 };
 
+export type AdminUser = {
+    id: number;
+    name: string;
+    email: string;
+    [key: string]: unknown;
+};
+
 export type Auth = {
-    user: User;
+    // Section 3: two separate worlds. Exactly one of these is set on any page -
+    // a customer is never `admin`, and staff are never `user`.
+    user: User | null;
+    admin: AdminUser | null;
     permissions: string[];
 };
 

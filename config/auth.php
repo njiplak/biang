@@ -40,6 +40,20 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * Spec section 3: platform staff sit on a completely separate login,
+         * backed by their own table, so a customer account can never reach
+         * admin functions.
+         *
+         * Same host and same session as `web` on purpose - impersonation needs
+         * a staff member to stay authenticated as staff while acting as the
+         * customer, which two guards in one session give us for free.
+         */
+        'admin' => [
+            'driver' => 'session',
+            'provider' => 'admin_users',
+        ],
     ],
 
     /*
@@ -63,6 +77,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', App\Models\User::class),
+        ],
+
+        'admin_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\AdminUser::class,
         ],
 
         // 'users' => [
@@ -94,6 +113,13 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+
+        'admin_users' => [
+            'provider' => 'admin_users',
+            'table' => 'admin_password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

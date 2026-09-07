@@ -1,4 +1,4 @@
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 
 export default function Backoffice() {
     return (
@@ -9,4 +9,4 @@ export default function Backoffice() {
     );
 }
 
-Backoffice.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+Backoffice.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

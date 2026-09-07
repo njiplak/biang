@@ -1,7 +1,7 @@
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 
 import IndexPage from '@/components/index-page';
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 import { createDateColumn } from '@/lib/column-helpers';
 import {
     create,
@@ -58,4 +58,4 @@ export default function RoleIndex() {
     );
 }
 
-RoleIndex.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+RoleIndex.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import AppLayout from '@/layouts/app-layout';
+import AdminLayout from '@/layouts/admin-layout';
 import { FormResponse } from '@/lib/constant';
 import { index, store, update } from '@/routes/backoffice/setting/setting';
 import type { Setting } from '@/types/setting';
@@ -70,4 +70,4 @@ export default function SettingForm({ setting }: Props) {
     );
 }
 
-SettingForm.layout = (page: React.ReactNode) => <AppLayout>{page}</AppLayout>;
+SettingForm.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;

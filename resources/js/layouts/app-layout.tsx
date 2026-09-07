@@ -1,12 +1,14 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
-    ChevronsUpDown,
+    CreditCard,
     LayoutDashboard,
     LogOut,
     Settings,
     Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
+import WorkspaceBanner from '@/components/workspace-banner';
+import WorkspaceSwitcher from '@/components/workspace-switcher';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     DropdownMenu,
@@ -31,106 +33,57 @@ import {
     SidebarMenuItem,
     SidebarProvider,
     SidebarTrigger,
-    useSidebar,
 } from '@/components/ui/sidebar';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { logout } from '@/routes';
-import backoffice from '@/routes/backoffice';
-import type { SharedData, AppLayoutProps } from '@/types';
+import type { AppLayoutProps, SharedData } from '@/types';
 
-function getInitials(name: string) {
-    return name
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2);
-}
-
-function SidebarUser() {
-    const { state } = useSidebar();
-    const isMobile = useIsMobile();
-    const user = usePage<SharedData>().props.auth.user;
-
-    return (
-        <SidebarMenu>
-            <SidebarMenuItem>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <SidebarMenuButton
-                            size="lg"
-                            className="data-[state=open]:bg-sidebar-accent"
-                        >
-                            <Avatar className="h-8 w-8 rounded-full">
-                                <AvatarFallback className="rounded-full bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
-                                    {getInitials(user.name)}
-                                </AvatarFallback>
-                            </Avatar>
-                            <div className="grid flex-1 text-left text-sm leading-tight">
-                                <span className="truncate font-medium">
-                                    {user.name}
-                                </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                    {user.email}
-                                </span>
-                            </div>
-                            <ChevronsUpDown className="ml-auto size-4" />
-                        </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                        className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-                        align="end"
-                        side={
-                            isMobile
-                                ? 'bottom'
-                                : state === 'collapsed'
-                                  ? 'left'
-                                  : 'bottom'
-                        }
-                    >
-                        <DropdownMenuLabel className="p-0 font-normal">
-                            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                                <Avatar className="h-8 w-8 rounded-full">
-                                    <AvatarFallback className="rounded-full bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
-                                        {getInitials(user.name)}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-medium">
-                                        {user.name}
-                                    </span>
-                                    <span className="truncate text-xs text-muted-foreground">
-                                        {user.email}
-                                    </span>
-                                </div>
-                            </div>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                            <Link
-                                className="block w-full cursor-pointer"
-                                href={logout()}
-                                as="button"
-                            >
-                                <LogOut className="mr-2" />
-                                Log out
-                            </Link>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </SidebarMenuItem>
-        </SidebarMenu>
-    );
-}
-
+/**
+ * The CUSTOMER shell. Staff use admin-layout, because section 3 keeps the two
+ * worlds separate right down to the navigation - this sidebar must never link
+ * anywhere a customer account cannot go.
+ */
 export default function AppLayout({ children }: AppLayoutProps) {
     const page = usePage<SharedData>();
-    const { sidebarOpen: isOpen } = page.props;
+    const { sidebarOpen: isOpen, auth, tenancy } = page.props;
+    const current = tenancy?.current ?? null;
     const currentUrl = page.url;
 
-    function isMenuActive(href: string) {
-        return currentUrl === href || currentUrl.startsWith(href + '/');
-    }
+    const isMenuActive = (href: string) =>
+        currentUrl === href || currentUrl.startsWith(href + '/');
+
+    // Section 3: admins manage people but never billing, and viewers only read.
+    const role = tenancy?.available?.find((w) => w.ulid === current?.ulid)?.role;
+    const canSeeBilling = role === 'owner' || role === 'billing_manager';
+
+    const nav = [
+        {
+            href: '/dashboard',
+            label: 'Dashboard',
+            icon: LayoutDashboard,
+            show: true,
+        },
+        {
+            href: current
+                ? `/workspaces/${current.ulid}/members`
+                : '/dashboard',
+            label: 'Members',
+            icon: Users,
+            show: Boolean(current),
+        },
+        {
+            href: '/billing',
+            label: 'Billing',
+            icon: CreditCard,
+            show: canSeeBilling,
+        },
+        {
+            href: current
+                ? `/workspaces/${current.ulid}/settings`
+                : '/dashboard',
+            label: 'Settings',
+            icon: Settings,
+            show: Boolean(current),
+        },
+    ].filter((item) => item.show);
 
     return (
         <SidebarProvider defaultOpen={isOpen}>
@@ -139,59 +92,97 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     <SidebarMenu>
                         <SidebarMenuItem>
                             <SidebarMenuButton size="lg" asChild>
-                                <Link href={backoffice.index.url()} prefetch>
+                                <Link href="/dashboard" prefetch>
                                     <AppLogo />
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
+                        <SidebarMenuItem>
+                            <WorkspaceSwitcher />
+                        </SidebarMenuItem>
                     </SidebarMenu>
                 </SidebarHeader>
+
                 <SidebarContent>
                     <SidebarGroup>
                         <SidebarGroupLabel>Menu</SidebarGroupLabel>
                         <SidebarGroupContent>
                             <SidebarMenu>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton asChild isActive={isMenuActive(backoffice.index.url())}>
-                                        <Link href={backoffice.index.url()}>
-                                            <LayoutDashboard />
-                                            <span>Dashboard</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton asChild isActive={isMenuActive(backoffice.setting.user.index.url())}>
-                                        <Link href={backoffice.setting.user.index.url()}>
-                                            <Users />
-                                            <span>Users</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton asChild isActive={isMenuActive(backoffice.setting.setting.index.url())}>
-                                        <Link href={backoffice.setting.setting.index.url()}>
-                                            <Settings />
-                                            <span>Settings</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
+                                {nav.map((item) => (
+                                    <SidebarMenuItem key={item.label}>
+                                        <SidebarMenuButton
+                                            asChild
+                                            isActive={isMenuActive(item.href)}
+                                        >
+                                            <Link href={item.href}>
+                                                <item.icon />
+                                                <span>{item.label}</span>
+                                            </Link>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
+                                ))}
                             </SidebarMenu>
                         </SidebarGroupContent>
                     </SidebarGroup>
                 </SidebarContent>
+
                 <SidebarFooter>
-                    <SidebarUser />
+                    <SidebarMenu>
+                        <SidebarMenuItem>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <SidebarMenuButton size="lg">
+                                        <Avatar className="size-8">
+                                            <AvatarFallback>
+                                                {auth.user?.name
+                                                    ?.charAt(0)
+                                                    ?.toUpperCase() ?? '?'}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="grid flex-1 text-left leading-tight">
+                                            <span className="truncate text-sm font-medium">
+                                                {auth.user?.name}
+                                            </span>
+                                            <span className="truncate text-xs text-muted-foreground">
+                                                {auth.user?.email}
+                                            </span>
+                                        </div>
+                                    </SidebarMenuButton>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-56">
+                                    <DropdownMenuLabel>
+                                        {auth.user?.email}
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild>
+                                        <Link
+                                            className="block w-full cursor-pointer"
+                                            href="/auth/logout"
+                                            method="post"
+                                            as="button"
+                                        >
+                                            <LogOut className="mr-2" />
+                                            Log out
+                                        </Link>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </SidebarMenuItem>
+                    </SidebarMenu>
                 </SidebarFooter>
             </Sidebar>
+
             <SidebarInset className="overflow-x-hidden">
                 <header className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5 sm:px-6 sm:py-3">
                     <SidebarTrigger />
                     <Separator orientation="vertical" className="mx-1 h-5" />
                     <h1 className="text-sm font-semibold tracking-tight sm:text-base">
-                        {page.props.name}
+                        {current?.name ?? page.props.name}
                     </h1>
                 </header>
+
                 <div className="flex flex-1 flex-col gap-4 p-3 sm:p-4 md:p-6">
+                    <WorkspaceBanner workspace={current} />
                     {children}
                 </div>
             </SidebarInset>

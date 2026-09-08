@@ -1,7 +1,9 @@
 /** Shapes the staff console reads. Mirrors App\Service\Admin\CustomerService. */
 
 export type WorkspaceState =
-    | 'free'
+    // No free tier: nobody is paying, so everything is readable and nothing
+    // is writable. Covers "never bought" and "subscription ended" alike.
+    | 'expired'
     | 'trialing'
     | 'active'
     | 'past_due'

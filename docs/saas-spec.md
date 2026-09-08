@@ -71,21 +71,41 @@ leave or be removed — they have to hand ownership over first.
 
 ## 4. What we sell
 
-### Free tier
-Perpetual. No card. No expiry. Capped on whatever our value metric turns
-out to be. This is a real product, not a teaser — it exists so people can
-stay with us when they cancel, and so the "no risk" signup path exists.
+### No free tier
+There is no free plan. Every plan carries a price, and every plan can be
+trialled with a card taken up front. The reasoning: a perpetual free tier
+carries permanent cost and support load with no forcing function toward
+revenue, and it dilutes the one number that tells us whether this is a
+business — trial-to-paid conversion.
+
+What replaces it is a **floor**: a workspace with no live subscription is
+**read-only**. Everything already in it stays, stays readable, and stays
+exportable-by-eye indefinitely. Nothing is deleted, and there is no
+countdown. Choosing a plan turns writing back on.
+
+Mechanically the floor is one plan row, marked `is_free`, that is not
+public, has no price, and is never offered. It exists because entitlement
+resolution needs something to resolve to when no subscription is live. Its
+limits are deliberately unlimited: a read-only workspace cannot write
+anyway, and a ceiling there would report "over limit" — naming a problem
+the customer cannot fix and hiding the one they can.
+
+> **What this costs us, stated plainly:** cancellation no longer lands
+> anywhere usable, so "read-only forever" has to actually be forever. The
+> moment a retention countdown is added to cancelled workspaces, this
+> promise breaks and a data export becomes mandatory.
 
 ### Free trial
 - 14 days *(to confirm)*, full features of a chosen paid plan.
 - **A card is required to start.** We collect it up front through Dodo.
+  This is the only way in: there is no card-less path to the product.
 - **One trial per person, ever** — not per workspace. If someone who has
   already used their trial creates a second workspace, that workspace
   starts on free or paid, never on trial.
 - At the end of day 14 it **charges automatically** and becomes a normal
   paid subscription. That is the whole point of taking the card.
 - If they cancel during the trial, they are not charged and the workspace
-  drops to the free tier.
+  becomes read-only.
 
 > **This is a commitment, not a detail:** because the trial auto-charges,
 > we owe the customer clear warning emails at 3 days and 1 day before.
@@ -117,13 +137,25 @@ our own product and cost us nothing.
 
 ### Three ways in
 
-**Path A — "Start free"**
-Marketing site → sign up → verify email → name your workspace → you're in,
-on the free tier. No card, ever.
+**Path A — "Start trial"** *(the only self-serve way in)*
+Marketing site, plan and billing period already chosen → sign up → verify
+email → name your workspace → enter card → 14-day trial begins →
+auto-charges on day 15.
 
-**Path B — "Start trial"**
-Marketing site, plan already chosen → sign up → verify email → name your
-workspace → enter card → 14-day trial begins → auto-charges on day 15.
+Both the plan AND the billing period are carried through signup and echoed
+back at every step, so the price the card form charges is the price the
+pricing page quoted.
+
+**Path B — signed up without choosing a plan**
+Possible, and it lands on a read-only workspace. Nothing is lost; they pick
+a plan from the billing page whenever they are ready.
+
+Email verification stays BEFORE the card, and not for anti-abuse reasons —
+a fresh verified address is free, so it protects the one-trial-per-person
+rule barely at all. It is because the trial auto-charges on day 15 and we
+owe warning emails at T-3 and T-1: taking a card we intend to charge
+automatically, against an address never proved to receive mail, is how a
+conversion becomes a chargeback.
 
 **Path C — "You've been invited"**
 Invite email → accept → you join an **existing** workspace. You do not
@@ -151,7 +183,7 @@ contract between product, support and engineering.
 
 | State | How it got there | Log in | Read | Write | Being billed |
 |---|---|---|---|---|---|
-| **Free** | Never paid, or cancelled and dropped back | Yes | Yes | Yes, within free limits | No |
+| **Read-only** | Never bought, or the subscription ended | Yes | Yes | **No** | No |
 | **Trialing** | Card given, day 1–14 | Yes | Yes | Yes, full plan | Not yet |
 | **Active** | Paying | Yes | Yes | Yes, full plan | Yes |
 | **Past due** | A renewal payment failed | Yes | Yes | **Yes** — with a warning banner | Retrying |
@@ -164,10 +196,16 @@ contract between product, support and engineering.
 - **Past due keeps full access on purpose.** A customer whose card expired
   is not a customer who left. Locking them out on day one of a failed
   payment is how you turn a card problem into a cancellation.
-- **Cancelling does not delete anything.** The workspace drops to the free
-  tier and the data stays. Because we run a perpetual free tier, we mostly
-  do not need a data-retention countdown at all — that only applies when a
-  workspace is genuinely deleted.
+- **Cancelling does not delete anything.** The workspace goes read-only
+  and every bit of the data stays, indefinitely, with no countdown. Nobody
+  is removed to make the workspace fit a smaller allowance, because there
+  is no smaller allowance — writing is simply off.
+- **Read-only must mean complete.** Every screen has to stay readable, not
+  a summary view. This is what makes the absence of a data export
+  defensible, and it constrains every feature built from here on.
+- **Read-only beats over limit** when both apply. An expired workspace
+  cannot write at all, so naming a seat limit would point the customer at a
+  problem that is not theirs to fix.
 - **Deleted workspaces are recoverable for 30 days** *(configurable)*, then
   anonymised rather than hard-deleted, so revenue history survives.
 
@@ -240,9 +278,14 @@ especially support.
    have to build separately.
 
 **Our own records are the source of truth for access. Theirs is the source
-of truth for money.** A customer on the free tier does not exist in Dodo at
-all, and a comped account granted by our sales team has no payment behind
-it — so access can never depend on asking Dodo a question.
+of truth for money.** A workspace that has never bought does not exist in
+Dodo at all, and a comped account granted by our sales team has no payment
+behind it — so access can never depend on asking Dodo a question.
+
+That said, **asking is how we stay in step.** Their notifications are the
+primary transport and the one that fails silently, so we also ask directly:
+on the checkout return, and hourly for every live subscription. Both land in
+the same reconciler as a webhook.
 
 ---
 
@@ -300,9 +343,10 @@ The marketing site is a separate project. The seam between them:
 - **Pricing is published by our app** and read by the marketing site, so a
   price change in the admin console updates both places at once. Nobody
   retypes a price.
-- **Two buttons, two destinations.** "Start free" goes to signup and ends
-  on the free tier. "Start trial" carries the chosen plan through signup
-  and ends at the card form.
+- **One button, one destination.** There is no "Start free". Every plan
+  button carries its plan AND its billing period through signup and ends at
+  the card form. The pricing feed publishes a `signup_url` per price for
+  exactly this, so the monthly/annual toggle cannot be lost on the way.
 - **Terms and privacy live on the marketing site.** Our app links to them
   from signup and from email footers.
 - The app sits on its own address (`app.` subdomain) so the two projects
@@ -316,7 +360,7 @@ The marketing site is a separate project. The seam between them:
 |---|---|
 | Who is the customer we bill? | The workspace |
 | Payment provider | Dodo Payments, merchant of record |
-| Free tier and free trial | Both exist |
+| Free tier | None. Every plan is priced; every plan can be trialled |
 | Card required for trial? | Yes |
 | Add-on types | Quantity, paid unlock, and metered — all three |
 | Can one person be in many workspaces? | Yes |
@@ -324,10 +368,11 @@ The marketing site is a separate project. The seam between them:
 | Over a limit? | Hard block on writing |
 | Trial eligibility | One per person, ever |
 | Payment account | One per workspace, so ownership can transfer cleanly |
-| Free tier in the payment provider? | No — free never touches them |
+| Floor plan in the payment provider? | No — it is never sold |
 | End of trial | Auto-charge |
-| Cancelling | Drops to free tier, data kept |
-| Data retention | 30 days after deletion, then anonymised — configurable |
+| Cancelling | Workspace goes read-only, data kept indefinitely |
+| Data retention | 30 days after DELETION, then anonymised — configurable. Cancelling is not deletion and has no countdown |
+| Data export | Not offered. Read-only access in the app is the whole promise |
 | Provider's self-serve plan switcher | Off. Cancellation stays on |
 | Invoices | We keep a summary; the document itself stays with the provider |
 
@@ -369,7 +414,7 @@ Each phase ends with something that can actually be shown.
 |---|---|---|
 | **0** | The plan and add-on table, once the value metric is decided | A pricing sheet |
 | **1** | Signup, login, email verification, password reset, the admin login, workspaces, invitations, roles | Two people collaborating in a workspace |
-| **2** | Plans, limits, add-ons, and the rules that gate features. Admin can create plans | A working free tier with real limits |
+| **2** | Plans, limits, add-ons, and the rules that gate features. Admin can create plans | Priced plans with real limits, and a read-only floor |
 | **3** | Trials, all the workspace states, limit enforcement, every email. Staff grant plans by hand | **The complete product, sellable manually** |
 | **4** | Real payments: checkout, renewals, plan changes, seat purchases, usage billing, failed-payment handling | Money arriving on its own |
 | **5** | Admin console completed: impersonation, customer directory, overrides, revenue dashboard | Support and sales self-sufficient |

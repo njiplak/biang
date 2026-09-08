@@ -13,11 +13,17 @@ use App\Support\Features;
 beforeEach(function () {
     $this->service = app(MembershipContract::class);
     Feature::factory()->create(['key' => Features::SEATS]);
-    $plan = Plan::factory()->free()->create();
+    $plan = Plan::factory()->floor()->create();
     $plan->features()->attach(Feature::where('key', Features::SEATS)->first(), ['value' => 10]);
 
     $this->owner = User::factory()->create();
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
+    /*
+     * Paying, because there is no free tier: an unpaid workspace is read-only
+     * whatever its limits say, and these tests are about the limit machinery,
+     * not about being expired.
+     */
+    $this->workspace->update(['billing_status' => App\Enums\BillingStatus::Active]);
     $this->ownerMembership = $this->workspace->owners()->first();
 });
 

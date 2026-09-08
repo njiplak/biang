@@ -127,16 +127,18 @@ it('records a staff account being created and offboarded', function () {
  * before is the part that cannot be reconstructed afterwards.
  */
 it('records what a plan limit was before it changed', function () {
-    $free = Plan::where('is_free', true)->firstOrFail();
-    $seats = $free->features()->where('key', 'seats')->firstOrFail();
+    // A plan somebody is sold. The floor plan carries no limits to change -
+    // it grants unlimited, because an expired workspace cannot write anyway.
+    $starter = Plan::where('code', 'starter')->firstOrFail();
+    $seats = $starter->features()->where('key', 'seats')->firstOrFail();
 
-    ($this->as)()->put(route('admin.catalog.plan.features', $free), [
+    ($this->as)()->put(route('admin.catalog.plan.features', $starter), [
         'limits' => [['feature_id' => $seats->id, 'value' => 9]],
     ]);
 
     $log = AuditLog::where('action', 'catalog.limits_changed')->firstOrFail();
 
-    expect($log->changes['from']['seats'])->toBe(2)
+    expect($log->changes['from']['seats'])->toBe(5)
         ->and($log->changes['to']['seats'])->toBe(9);
 });
 

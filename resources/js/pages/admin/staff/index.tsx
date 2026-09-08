@@ -25,11 +25,7 @@ function when(value: string | null) {
     });
 }
 
-export default function StaffIndex({
-    roles,
-}: {
-    roles: { name: string }[];
-}) {
+export default function StaffIndex({ roles }: { roles: { name: string }[] }) {
     const me = usePage<SharedData>().props.auth.admin;
     const [editing, setEditing] = useState<StaffRow | null>(null);
     const [refresh, setRefresh] = useState(0);
@@ -185,4 +181,6 @@ export default function StaffIndex({
     );
 }
 
-StaffIndex.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;
+StaffIndex.layout = (page: React.ReactNode) => (
+    <AdminLayout>{page}</AdminLayout>
+);

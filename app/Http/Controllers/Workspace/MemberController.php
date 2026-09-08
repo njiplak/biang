@@ -75,7 +75,7 @@ class MemberController extends Controller
                 'limit' => $this->entitlements->limitFor($workspace, Features::SEATS),
             ],
             // Section 7: a seat limit is a sales moment, so the page carries
-            // the priced offer. Null on the free tier, where the answer is an
+            // the priced offer. Null without a subscription, where the answer is an
             // upgrade rather than an add-on (section 12).
             'seat_offer' => $this->seatOffer($workspace),
         ]);

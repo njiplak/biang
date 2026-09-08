@@ -55,7 +55,7 @@ it('cancels the subscription when the workspace closes', function () {
 
     $fresh = Workspace::withTrashed()->find($this->workspace->id);
 
-    expect($fresh->billing_status)->toBe(BillingStatus::Free)
+    expect($fresh->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($fresh->subscriptions()->live()->count())->toBe(0);
 });
 
@@ -70,7 +70,13 @@ it('keeps members and data through the retention window', function () {
         ->toBe($memberCount);
 });
 
-it('restores a closed workspace to the free tier', function () {
+/*
+ * Reopening undoes the closure, not the cancellation. Closing cancels the
+ * subscription (section 6: a deleted workspace is no longer billed), and there
+ * is no free tier to come back to - so the workspace returns readable and
+ * read-only until somebody subscribes again.
+ */
+it('restores a closed workspace as readable and read-only', function () {
     $this->service->closeWorkspace($this->workspace);
 
     $this->service->reopenWorkspace(Workspace::withTrashed()->find($this->workspace->id));
@@ -80,7 +86,8 @@ it('restores a closed workspace to the free tier', function () {
     expect($fresh)->not->toBeNull()
         ->and($fresh->access_status)->toBe(AccessStatus::Active)
         ->and($fresh->purge_after)->toBeNull()
-        ->and($fresh->canWrite())->toBeTrue();
+        ->and($fresh->canRead())->toBeTrue()
+        ->and($fresh->canWrite())->toBeFalse();
 });
 
 // A closed workspace must drop out of the switcher immediately.

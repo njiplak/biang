@@ -23,8 +23,19 @@ beforeEach(function () {
     $this->entitlements = app(EntitlementContract::class);
     $this->seats = Feature::factory()->create(['key' => Features::SEATS]);
 
-    $this->free = Plan::factory()->free()->create();
-    $this->free->features()->attach($this->seats, ['value' => 2]);
+    /*
+     * Unlimited, mirroring the seeded floor. An expired workspace cannot write
+     * at all, so a ceiling here would enforce nothing and would only mislabel
+     * why a cancelled workspace is blocked.
+     */
+    $this->floor = Plan::factory()->floor()->create();
+    $this->floor->features()->attach($this->seats, ['value' => null]);
+
+    // A small PAID plan. The floor is not sellable, so a test about moving
+    // between plans has to start on one somebody could actually buy.
+    $this->basic = Plan::factory()->create(['code' => 'basic']);
+    $this->basic->features()->attach($this->seats, ['value' => 2]);
+    $this->basicPrice = PlanPrice::factory()->for($this->basic)->create(['amount_minor' => 900]);
 
     $this->pro = Plan::factory()->create(['code' => 'pro']);
     $this->pro->features()->attach($this->seats, ['value' => 10]);
@@ -67,7 +78,7 @@ it('commits nothing when the trial is refused', function () {
         ->toThrow(TrialAlreadyConsumed::class);
 
     expect(Subscription::withoutWorkspaceScope()->count())->toBe(0)
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 // Section 12: one payment account per workspace.
@@ -107,7 +118,7 @@ it('converts a trial into a paid subscription', function () {
 });
 
 it('upgrades a plan and re-resolves entitlements', function () {
-    $this->service->grantPlan($this->workspace, PlanPrice::factory()->for($this->free)->create(), AdminUser::factory()->create(), 'seed');
+    $this->service->grantPlan($this->workspace, $this->basicPrice, AdminUser::factory()->create(), 'seed');
     expect($this->entitlements->limitFor($this->workspace, Features::SEATS))->toBe(2);
 
     $this->service->changePlan($this->workspace, $this->proPrice);
@@ -180,17 +191,25 @@ it('allows a downgrade once enough people have been removed', function () {
 
 // Section 6: "Cancelling does not delete anything. The workspace drops to the
 // free tier and the data stays."
-it('cancels to the free tier and keeps the workspace usable', function () {
+/*
+ * Section 6 promised cancelling "does not delete anything". It still does not -
+ * what changed is where it lands. There is no free tier to keep working on, so
+ * the workspace goes read-only and stays that way, indefinitely.
+ */
+it('cancels to read-only and keeps every bit of the data', function () {
     $this->service->grantPlan($this->workspace, $this->proPrice, AdminUser::factory()->create(), 'seed');
 
     $this->service->cancel($this->workspace);
 
     $fresh = $this->workspace->fresh();
-    expect($fresh->billing_status)->toBe(BillingStatus::Free)
+    expect($fresh->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($fresh->canRead())->toBeTrue()
-        ->and($fresh->canWrite())->toBeTrue()
+        ->and($fresh->canExport())->toBeTrue()
+        ->and($fresh->canWrite())->toBeFalse()
         ->and($fresh->subscription)->toBeNull()
-        ->and($this->entitlements->limitFor($this->workspace, Features::SEATS))->toBe(2);
+        // Unlimited on the floor: the read-only block is what stops writing,
+        // so a ceiling here would only mislabel why.
+        ->and($this->entitlements->limitFor($this->workspace, Features::SEATS))->toBeNull();
 });
 
 it('keeps the cancelled subscription as history', function () {
@@ -204,14 +223,26 @@ it('keeps the cancelled subscription as history', function () {
 
 // Cancelling from a bigger plan can leave the workspace over the free limit -
 // section 7 then applies, rather than us deleting anyone's data to make it fit.
-it('applies the hard block when cancelling leaves the workspace over the free limit', function () {
+/*
+ * Cancelling used to drop a workspace onto the free tier, where too many
+ * members made it "over limit". There is no free tier now, so the block is not
+ * about a limit at all - it is that nobody is paying. Everybody keeps their
+ * seat and the whole workspace goes read-only.
+ *
+ * The distinction is the customer-facing one: "remove three people" is advice
+ * they can act on and would not fix this, and "subscribe again" is the truth.
+ */
+it('blocks writing after a cancellation without blaming a limit', function () {
     $this->service->grantPlan($this->workspace, $this->proPrice, AdminUser::factory()->create(), 'seed');
     WorkspaceMember::factory()->for($this->workspace)->count(4)->create();
 
     $this->service->cancel($this->workspace);
 
     $fresh = $this->workspace->fresh();
-    expect($fresh->isOverLimit())->toBeTrue()
+    expect($fresh->displayState())->toBe(App\Enums\WorkspaceDisplayState::Expired)
+        ->and($fresh->isOverLimit())->toBeFalse()
         ->and($fresh->canWrite())->toBeFalse()
-        ->and($fresh->canRead())->toBeTrue();
+        ->and($fresh->canRead())->toBeTrue()
+        // Nobody was removed to make the data fit.
+        ->and($fresh->seatsUsed())->toBe(5);
 });

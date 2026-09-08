@@ -34,7 +34,7 @@ type Props = {
     invitations: Invitation[];
     // limit is null when the plan grants unlimited seats
     seats: { used: number; limit: number | null };
-    // section 7's priced offer; null on the free tier, where the answer is an upgrade
+    // section 7's priced offer; null without a subscription, where the answer is a plan
     seat_offer: SeatOffer | null;
     // inviting is gated on a verified address (section 5)
 };

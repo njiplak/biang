@@ -25,6 +25,8 @@ export type CurrentWorkspace = {
     over_limit_features: string[] | null;
     grace_ends_at: string | null;
     trial_ends_at: string | null;
+    // Counted server-side: reading the clock during render is impure.
+    trial_days_left: number | null;
 };
 
 export type WorkspaceContext = {
@@ -60,6 +62,8 @@ export type SharedData = {
     impersonation: ImpersonationContext | null;
     // Empty for guests and in the admin console; staff get their own screen.
     announcements: AnnouncementNotice[];
+    // Survives exactly one redirect. Null on almost every request.
+    flash: { warning: string | null };
     sidebarOpen: boolean;
     [key: string]: unknown;
 };

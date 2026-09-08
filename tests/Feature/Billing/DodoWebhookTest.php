@@ -1,10 +1,12 @@
 <?php
 
+use App\Contract\Billing\ReconcilerContract;
 use App\Contract\Workspace\WorkspaceContract;
 use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
 use App\Enums\DunningResolution;
 use App\Enums\SubscriptionStatus;
+use App\Jobs\ReconcileWebhookEvent;
 use App\Models\DunningState;
 use App\Models\InvoiceSummary;
 use App\Models\Plan;
@@ -14,6 +16,7 @@ use App\Models\User;
 use App\Models\WebhookEvent;
 use Database\Seeders\FeatureSeeder;
 use Database\Seeders\PlanSeeder;
+use Illuminate\Support\Facades\Queue;
 use StandardWebhooks\Webhook;
 
 /*
@@ -197,7 +200,7 @@ it('drops to the free tier when they cancel on the provider page', function () {
 
     expect($subscription->status)->toBe(SubscriptionStatus::Canceled)
         ->and($subscription->canceled_at)->not->toBeNull()
-        ->and($workspace->billing_status)->toBe(BillingStatus::Free)
+        ->and($workspace->billing_status)->toBe(BillingStatus::Unpaid)
         // Deletes nothing: the members are still there.
         ->and($workspace->members()->count())->toBe(1);
 });
@@ -251,14 +254,14 @@ it('processes a redelivered event only once', function () {
 it('ignores an event older than the state already recorded', function () {
     ($this->send)(($this->event)('subscription.cancelled', [], now()->toIso8601String()))->assertOk();
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 
     // An activation that was actually emitted BEFORE the cancellation.
     ($this->send)(($this->event)('subscription.active', [], now()->subHour()->toIso8601String()))
         ->assertOk();
 
     expect($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Canceled)
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 // The trail has to be complete even for events we do not act on.
@@ -545,3 +548,233 @@ it('keeps a converted trial countable as a conversion', function () {
     expect($subscription->status)->toBe(SubscriptionStatus::Active)
         ->and($subscription->trial_ends_at)->not->toBeNull();
 });
+
+// ------------------------------------------------------ the first purchase
+
+/*
+ * Section 8: "nothing about our state moves until the webhook arrives", so a
+ * workspace buying for the FIRST time has no subscription row for this event to
+ * find. It used to be recorded as "No matching subscription" - the customer
+ * paid, and nothing happened.
+ *
+ * `plan_price_id` rides in the checkout metadata for exactly this reason: their
+ * product id is a different id space from our price rows, so it is the one
+ * thing their payload cannot tell us.
+ */
+it('opens a subscription for a workspace buying for the first time', function () {
+    $buyer = User::factory()->create();
+    $fresh = app(WorkspaceContract::class)->create($buyer, 'First Time Ltd');
+
+    expect($fresh->subscription()->withoutWorkspaceScope()->first())->toBeNull();
+
+    ($this->send)([
+        'type' => 'subscription.active',
+        'timestamp' => now()->toIso8601String(),
+        'data' => [
+            'subscription_id' => 'sub_brand_new',
+            'metadata' => [
+                'workspace_ulid' => $fresh->ulid,
+                'plan_price_id' => (string) $this->price->id,
+                'started_by_user_id' => (string) $buyer->id,
+            ],
+            'customer' => ['customer_id' => 'cus_brand_new'],
+            'next_billing_date' => now()->addMonth()->toIso8601String(),
+        ],
+    ])->assertOk();
+
+    $subscription = $fresh->subscription()->withoutWorkspaceScope()->first();
+
+    expect($subscription)->not->toBeNull()
+        ->and($subscription->status)->toBe(SubscriptionStatus::Active)
+        ->and($subscription->plan_price_id)->toBe($this->price->id)
+        ->and($subscription->billing_source)->toBe(BillingSource::Dodo)
+        ->and($subscription->dodo_subscription_id)->toBe('sub_brand_new')
+        ->and($fresh->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+// The same first event, but the customer took the fourteen free days.
+it('opens a first subscription as trialing when the checkout carried free days', function () {
+    $buyer = User::factory()->create();
+    $fresh = app(WorkspaceContract::class)->create($buyer, 'Trial Ltd');
+
+    ($this->send)([
+        'type' => 'subscription.active',
+        'timestamp' => now()->toIso8601String(),
+        'data' => [
+            'subscription_id' => 'sub_trial_new',
+            'trial_period_days' => 14,
+            'metadata' => [
+                'workspace_ulid' => $fresh->ulid,
+                'plan_price_id' => (string) $this->price->id,
+                'started_by_user_id' => (string) $buyer->id,
+            ],
+            'next_billing_date' => now()->addDays(14)->toIso8601String(),
+        ],
+    ])->assertOk();
+
+    $subscription = $fresh->subscription()->withoutWorkspaceScope()->first();
+
+    expect($subscription->status)->toBe(SubscriptionStatus::Trialing)
+        ->and($fresh->fresh()->billing_status)->toBe(BillingStatus::Trialing)
+        // Section 12: the trial is spent by the person who started it.
+        ->and($buyer->fresh()->hasConsumedTrial())->toBeTrue();
+});
+
+/*
+ * A payment that overtakes the subscription event still has to land the
+ * customer somewhere paid - out-of-order delivery is section 8's stated norm.
+ */
+it('opens a first subscription from a payment that arrives first', function () {
+    $buyer = User::factory()->create();
+    $fresh = app(WorkspaceContract::class)->create($buyer, 'Paid First Ltd');
+
+    ($this->send)([
+        'type' => 'payment.succeeded',
+        'timestamp' => now()->toIso8601String(),
+        'data' => [
+            'subscription_id' => 'sub_paid_first',
+            'payment_id' => 'pay_first',
+            'total_amount' => 4900,
+            'currency' => 'USD',
+            'metadata' => [
+                'workspace_ulid' => $fresh->ulid,
+                'plan_price_id' => (string) $this->price->id,
+            ],
+        ],
+    ])->assertOk();
+
+    $subscription = $fresh->subscription()->withoutWorkspaceScope()->first();
+
+    expect($subscription->status)->toBe(SubscriptionStatus::Active)
+        ->and($fresh->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+/*
+ * Inventing a cancelled subscription to hold an anomaly would turn a visible
+ * failure into a silent one. A cancellation for something we never sold stays
+ * recorded and unprocessed.
+ */
+it('refuses to open a subscription for an event that does not establish one', function () {
+    $fresh = app(WorkspaceContract::class)->create(User::factory()->create(), 'Ghost Ltd');
+
+    ($this->send)([
+        'type' => 'subscription.cancelled',
+        'timestamp' => now()->toIso8601String(),
+        'data' => [
+            'subscription_id' => 'sub_ghost',
+            'metadata' => [
+                'workspace_ulid' => $fresh->ulid,
+                'plan_price_id' => (string) $this->price->id,
+            ],
+        ],
+    ])->assertOk();
+
+    expect($fresh->subscription()->withoutWorkspaceScope()->first())->toBeNull()
+        ->and(WebhookEvent::where('event_type', 'subscription.cancelled')->firstOrFail()->error)
+        ->toContain('No matching subscription');
+});
+
+// Without a price we can resolve there is no plan to put them on.
+it('will not open a subscription when the metadata names no price', function () {
+    $fresh = app(WorkspaceContract::class)->create(User::factory()->create(), 'No Price Ltd');
+
+    ($this->send)([
+        'type' => 'subscription.active',
+        'timestamp' => now()->toIso8601String(),
+        'data' => [
+            'subscription_id' => 'sub_no_price',
+            'metadata' => ['workspace_ulid' => $fresh->ulid],
+        ],
+    ])->assertOk();
+
+    expect($fresh->subscription()->withoutWorkspaceScope()->first())->toBeNull();
+});
+
+// --------------------------------------------------------------- the queue
+
+/*
+ * The endpoint's job is to ACCEPT the delivery, not to carry it out. Doing both
+ * inline put an entitlement rebuild and a seat sync inside Dodo's HTTP timeout,
+ * where being slow reads to them as having failed - so the slowest events were
+ * the ones they redelivered most.
+ */
+it('accepts the delivery and reconciles off the request', function () {
+    Queue::fake();
+
+    ($this->send)(($this->event)('subscription.active', [
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    // Recorded, verified, and handed on - but deliberately not yet applied.
+    $event = WebhookEvent::firstOrFail();
+
+    expect($event->signature_verified)->toBeTrue()
+        ->and($event->processed_at)->toBeNull()
+        ->and($this->workspace->fresh()->billing_status)->not->toBe(BillingStatus::Active);
+
+    Queue::assertPushed(ReconcileWebhookEvent::class);
+});
+
+it('applies the event when the queued job runs', function () {
+    Queue::fake();
+
+    ($this->send)(($this->event)('subscription.active', [
+        'next_billing_date' => now()->addMonth()->toIso8601String(),
+    ]))->assertOk();
+
+    (new ReconcileWebhookEvent(WebhookEvent::firstOrFail()->id))
+        ->handle(app(ReconcilerContract::class));
+
+    expect(WebhookEvent::firstOrFail()->processed_at)->not->toBeNull()
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Active);
+});
+
+// Nothing is verified a second time, and nothing is applied a second time.
+it('does nothing when the job runs again for an event already applied', function () {
+    ($this->send)(($this->event)('subscription.cancelled'))->assertOk();
+
+    $event = WebhookEvent::firstOrFail();
+    $processedAt = $event->processed_at;
+
+    expect($processedAt)->not->toBeNull();
+
+    (new ReconcileWebhookEvent($event->id))->handle(app(ReconcilerContract::class));
+
+    expect(WebhookEvent::firstOrFail()->processed_at->eq($processedAt))->toBeTrue();
+});
+
+/*
+ * A reconcile that throws has to leave a reason somebody can read. The rethrow
+ * is what asks the queue to try again - without the record first, an event that
+ * exhausted its attempts would look merely unprocessed.
+ */
+it('records why a reconcile failed before asking the queue to retry', function () {
+    $this->swap(ReconcilerContract::class, new class implements ReconcilerContract
+    {
+        public function reconcile(WebhookEvent $event): void
+        {
+            throw new RuntimeException('the database was unreachable');
+        }
+    });
+
+    Queue::fake();
+
+    ($this->send)(($this->event)('subscription.active'))->assertOk();
+
+    $job = new ReconcileWebhookEvent(WebhookEvent::firstOrFail()->id);
+
+    expect(fn () => $job->handle(app(ReconcilerContract::class)))
+        ->toThrow(RuntimeException::class);
+
+    $event = WebhookEvent::firstOrFail();
+
+    expect($event->failed_at)->not->toBeNull()
+        ->and($event->error)->toContain('the database was unreachable')
+        ->and($event->attempts)->toBe(1)
+        ->and($event->processed_at)->toBeNull();
+});
+
+// A job for a row that has since been deleted must not take the worker down.
+it('survives a job for an event that no longer exists', function () {
+    (new ReconcileWebhookEvent(999_999))->handle(app(ReconcilerContract::class));
+})->throwsNoExceptions();

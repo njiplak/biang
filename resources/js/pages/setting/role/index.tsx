@@ -35,7 +35,7 @@ const columns: ColumnDef<Role, any>[] = [
         cell: (ctx) => {
             const count = ctx.row.original.permissions?.length ?? 0;
             return (
-                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-700/10 ring-inset">
                     {count}
                 </span>
             );
@@ -44,7 +44,13 @@ const columns: ColumnDef<Role, any>[] = [
     createDateColumn<Role>('created_at'),
 ];
 
-const routes = { fetch: fetchRoute, destroy: destroyRoute, destroyBulk, show, create };
+const routes = {
+    fetch: fetchRoute,
+    destroy: destroyRoute,
+    destroyBulk,
+    show,
+    create,
+};
 
 export default function RoleIndex() {
     return (

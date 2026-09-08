@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Webhook;
 
-use App\Contract\Billing\ReconcilerContract;
 use App\Contract\Billing\WebhookVerifierContract;
 use App\Http\Controllers\Controller;
+use App\Jobs\ReconcileWebhookEvent;
 use App\Models\WebhookEvent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,12 +23,21 @@ use Throwable;
  *    our records.
  * 3. Answer 200 for anything we have accepted, including event types we do not
  *    act on. A non-2xx tells Dodo to retry forever.
+ *
+ * Accepting is all this does. Reconciling happens on the queue, because it is
+ * not part of accepting a delivery - and doing it inline put an entitlement
+ * rebuild inside Dodo's HTTP timeout, where being slow reads as having failed
+ * and earns a redelivery of the event that was slowest to process.
+ *
+ * What that gives up is Dodo's own retry as the safety net under a reconcile
+ * that throws, since by then we have already answered 200. What replaces it is
+ * ours: the job retries, billing-ops can replay the row by hand, and
+ * billing:reconcile-subscriptions asks Dodo directly every hour.
  */
 class DodoWebhookController extends Controller
 {
     public function __construct(
         private readonly WebhookVerifierContract $verifier,
-        private readonly ReconcilerContract $reconciler,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -63,16 +72,13 @@ class DodoWebhookController extends Controller
         }
 
         try {
-            $this->reconciler->reconcile($event);
+            ReconcileWebhookEvent::dispatch($event->id);
         } catch (Throwable $e) {
-            // Recorded, not lost. Returning 500 asks Dodo to redeliver, and the
-            // row is already stored so a retry is idempotent.
-            $event->update([
-                'failed_at' => now(),
-                'error' => $e->getMessage(),
-                'attempts' => $event->attempts + 1,
-            ]);
-
+            /*
+             * Only reachable on a synchronous queue, where reconciling really
+             * is part of accepting the delivery - so the old answer is still
+             * the right one there. The job has already recorded why.
+             */
             report($e);
 
             return response()->json(['message' => 'Could not process.'], 500);

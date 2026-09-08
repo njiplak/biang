@@ -122,6 +122,10 @@ it('does not lock an owner out when they change their email', function () {
     $verified = User::factory()->create();
     $workspace = app(WorkspaceContract::class)->create($verified, 'Beta Co');
 
+    // Inviting is a write, and there is no free tier - this test is about the
+    // verification gate, not about being unable to pay.
+    subscribeWorkspace($workspace);
+
     $this->actingAs($verified)
         ->post(route('workspace.invitation.store', $workspace), [
             'email' => 'colleague@beta.test',

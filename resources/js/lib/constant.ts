@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 
 const formatErrorMessages = (err: any) => {
     if (err.message) return err.message;
-    if (Array.isArray(err)) return err.map((item) => item.message || item).join(', ');
+    if (Array.isArray(err))
+        return err.map((item) => item.message || item).join(', ');
     if (err.errors) return err.errors;
     return JSON.stringify(err);
 };

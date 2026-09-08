@@ -36,6 +36,17 @@ Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () 
     Route::get('portal', [BillingController::class, 'portal'])->name('portal');
 
     Route::put('plan', [BillingController::class, 'changePlan'])->middleware('verified')->name('plan');
+
+    /*
+     * What the switch above would cost, asked before it is made. Section 4
+     * prorates the difference and section 8 makes that arithmetic Dodo's, so
+     * this is the only way to show a number before charging it.
+     *
+     * A GET because it changes nothing, and `verified` because it reaches out
+     * to the provider on the customer's behalf.
+     */
+    Route::get('plan/preview', [BillingController::class, 'previewPlan'])
+        ->middleware('verified')->name('plan.preview');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
 
     // Section 4's three add-on kinds. Entitlements move now; money follows in

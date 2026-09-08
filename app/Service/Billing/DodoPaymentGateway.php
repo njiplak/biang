@@ -4,21 +4,27 @@ namespace App\Service\Billing;
 
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Enums\BillingInterval;
+use App\Enums\CancellationFeedback;
 use App\Exceptions\Domain\CancellationFailed;
 use App\Exceptions\Domain\CheckoutUnavailable;
 use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
+use App\Exceptions\Domain\ProviderLookupFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\Workspace;
+use DateTimeInterface;
 use Dodopayments\Client;
 use Dodopayments\Misc\TaxCategory;
+use Dodopayments\Payments\PaymentListParams\Status as PaymentStatus;
 use Dodopayments\Products\Price\RecurringPrice;
 use Dodopayments\Subscriptions\SubscriptionChangePlanParams\ProrationBillingMode;
+use Dodopayments\Subscriptions\SubscriptionPreviewChangePlanParams\ProrationBillingMode as PreviewProrationBillingMode;
 use Dodopayments\Subscriptions\SubscriptionStatus;
+use Dodopayments\Subscriptions\SubscriptionUpdateParams\CancelReason;
 use Dodopayments\Subscriptions\TimeInterval;
 use Throwable;
 
@@ -89,7 +95,7 @@ class DodoPaymentGateway implements PaymentGatewayContract
      * The customer id is stamped on the workspace by DodoReconciler the first
      * time Dodo tells us about them, so a workspace that has never paid has
      * none - and there is genuinely nothing to open. That is a message, not an
-     * error page: on the free tier it is the expected state.
+     * error page: for a workspace that has never bought, it is expected.
      */
     public function customerPortalUrl(Workspace $workspace, string $returnUrl): string
     {
@@ -303,8 +309,12 @@ class DodoPaymentGateway implements PaymentGatewayContract
      * for, while cancelling outright ends the subscription now. Which one we
      * use is SubscriptionService's decision, not this method's.
      */
-    public function cancelSubscription(Subscription $subscription, bool $atPeriodEnd = false): void
-    {
+    public function cancelSubscription(
+        Subscription $subscription,
+        bool $atPeriodEnd = false,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void {
         if (blank($subscription->dodo_subscription_id)) {
             throw new CancellationFailed('this subscription is not held with the payment provider');
         }
@@ -317,11 +327,180 @@ class DodoPaymentGateway implements PaymentGatewayContract
             $this->client()->subscriptions->update(
                 subscriptionID: $subscription->dodo_subscription_id,
                 cancelAtNextBillingDate: $atPeriodEnd ? true : null,
+                // Always the customer: every call to this method comes from
+                // them pressing cancel. A merchant-initiated stop is dunning,
+                // and that is Dodo's own to record.
+                cancelReason: CancelReason::CANCELLED_BY_CUSTOMER,
+                cancellationComment: $comment,
+                cancellationFeedback: $feedback?->value,
                 status: $atPeriodEnd ? null : SubscriptionStatus::CANCELLED,
             );
         } catch (Throwable $e) {
             throw new CancellationFailed('the payment provider did not respond', $e);
         }
+    }
+
+    /**
+     * @param  list<array{addon_id: string, quantity: int}>  $addons
+     * @return array{amount_minor: int, currency: string, tax_minor: int|null, credit_minor: int}
+     */
+    public function previewPlanChange(
+        Subscription $subscription,
+        PlanPrice $price,
+        array $addons = [],
+    ): array {
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
+        }
+
+        if (blank($price->dodo_product_id)) {
+            throw new PlanChangeUnavailable('the new plan is not published to the payment provider yet');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new PlanChangeUnavailable('the payment provider is not configured');
+        }
+
+        try {
+            /*
+             * The same arguments the real change sends, or the number quoted is
+             * not the number charged. PRORATED_IMMEDIATELY especially: it is
+             * what decides whether this comes back as a charge for the
+             * difference or the full price of the new plan.
+             */
+            $preview = $this->client()->subscriptions->previewChangePlan(
+                subscriptionID: $subscription->dodo_subscription_id,
+                productID: $price->dodo_product_id,
+                prorationBillingMode: PreviewProrationBillingMode::PRORATED_IMMEDIATELY,
+                quantity: 1,
+                addons: $addons === [] ? null : $addons,
+            );
+        } catch (Throwable $e) {
+            throw new PlanChangeUnavailable('the payment provider could not price this change', $e);
+        }
+
+        $summary = $preview->immediateCharge->summary;
+
+        return [
+            'amount_minor' => $summary->totalAmount,
+            'currency' => $summary->currency,
+            'tax_minor' => $summary->tax,
+            // What the unused remainder of the current plan is worth back to
+            // them. Shown separately because "you are charged 12" reads very
+            // differently from "37 less 25 of credit".
+            'credit_minor' => $summary->customerCredits,
+        ];
+    }
+
+    /**
+     * Ask Dodo what is true about one subscription, right now.
+     *
+     * The counterpart to waiting for a webhook, and the reason it exists: a
+     * notification that is delayed, rejected at the door, or never sent at all
+     * leaves our records saying nothing happened. Asking is the only way to
+     * tell those apart from nothing having happened.
+     *
+     * The answer is reshaped into their own webhook `data` block so it can go
+     * through the one reconciler rather than a second copy of its rules.
+     *
+     * @return array<string, mixed>
+     */
+    public function retrieveSubscription(string $providerSubscriptionId): array
+    {
+        if (blank(config('dodo.api_key'))) {
+            throw new ProviderLookupFailed('the payment provider is not configured');
+        }
+
+        try {
+            $subscription = $this->client()->subscriptions->retrieve($providerSubscriptionId);
+        } catch (Throwable $e) {
+            throw new ProviderLookupFailed('the payment provider did not answer about this subscription', $e);
+        }
+
+        return [
+            'subscription_id' => $subscription->subscriptionID,
+            'status' => $subscription->status,
+            'metadata' => $subscription->metadata,
+            'customer' => ['customer_id' => $subscription->customer->customerID],
+            'trial_period_days' => $subscription->trialPeriodDays,
+            'previous_billing_date' => $this->iso($subscription->previousBillingDate),
+            'next_billing_date' => $this->iso($subscription->nextBillingDate),
+            'cancel_at_next_billing_date' => $subscription->cancelAtNextBillingDate,
+            'cancelled_at' => $this->iso($subscription->cancelledAt),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function listSucceededPaymentIds(string $providerSubscriptionId): array
+    {
+        if (blank(config('dodo.api_key'))) {
+            throw new ProviderLookupFailed('the payment provider is not configured');
+        }
+
+        try {
+            /*
+             * Filtered at their end rather than ours. A subscription accumulates
+             * failed and abandoned attempts as well as settled ones, and only a
+             * settled payment is an invoice - `hasBeenCharged` reads these to
+             * decide whether a trial is over, so a failed attempt counted here
+             * would end a trial that was never paid for.
+             */
+            $page = $this->client()->payments->list(
+                status: PaymentStatus::SUCCEEDED,
+                subscriptionID: $providerSubscriptionId,
+            );
+
+            $ids = [];
+
+            // Paginated: a long-lived annual subscription outlives one page,
+            // and stopping at the first would silently lose older invoices.
+            foreach ($page as $payment) {
+                $ids[] = $payment->paymentID;
+            }
+        } catch (Throwable $e) {
+            throw new ProviderLookupFailed('the payment provider did not answer about these payments', $e);
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function retrievePayment(string $paymentId): array
+    {
+        if (blank(config('dodo.api_key'))) {
+            throw new ProviderLookupFailed('the payment provider is not configured');
+        }
+
+        try {
+            $payment = $this->client()->payments->retrieve($paymentId);
+        } catch (Throwable $e) {
+            throw new ProviderLookupFailed('the payment provider did not answer about this payment', $e);
+        }
+
+        return [
+            'payment_id' => $payment->paymentID,
+            'subscription_id' => $payment->subscriptionID,
+            'status' => $payment->status,
+            'currency' => $payment->currency,
+            // Every figure copied, never computed: section 8 makes them
+            // merchant of record, so tax is theirs to state.
+            'total_amount' => $payment->totalAmount,
+            'settlement_amount' => $payment->settlementAmount,
+            'tax' => $payment->tax,
+            'created_at' => $this->iso($payment->createdAt),
+            'customer' => ['customer_id' => $payment->customer->customerID],
+            'metadata' => $payment->metadata,
+        ];
+    }
+
+    /** Their dates come back as objects; the reconciler parses strings. */
+    private function iso(?DateTimeInterface $value): ?string
+    {
+        return $value?->format(DateTimeInterface::ATOM);
     }
 
     /** Our billing interval in the provider's vocabulary. */

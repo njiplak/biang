@@ -22,14 +22,35 @@ beforeEach(function () {
 it('publishes the public plans without a login', function () {
     $this->getJson(route('pricing'))
         ->assertOk()
-        ->assertJsonPath('plans.0.code', 'free')
-        ->assertJsonPath('plans.1.code', 'starter')
-        ->assertJsonPath('plans.2.code', 'pro')
+        ->assertJsonPath('plans.0.code', 'starter')
+        ->assertJsonPath('plans.1.code', 'pro')
         ->assertJsonStructure([
             'plans' => [['code', 'name', 'is_free', 'prices', 'limits', 'signup_url']],
             'trial_days',
             'signup_url',
         ]);
+});
+
+/*
+ * There is no free tier to publish. The floor plan exists only so a workspace
+ * whose subscription ended has somewhere to rest - it is not public, has no
+ * price, and must never appear on a pricing page as something to choose.
+ */
+it('never publishes the floor plan', function () {
+    $response = $this->getJson(route('pricing'))->assertOk();
+
+    expect(collect($response->json('plans'))->pluck('code'))->not->toContain('free')
+        ->and($response->json('plans'))->toHaveCount(2);
+});
+
+// Every plan on the page is one somebody can actually buy.
+it('publishes nothing without a price', function () {
+    $response = $this->getJson(route('pricing'))->assertOk();
+
+    foreach ($response->json('plans') as $plan) {
+        expect($plan['prices'])->not->toBeEmpty()
+            ->and($plan['is_free'])->toBeFalse();
+    }
 });
 
 it('publishes prices as integer minor units keyed by interval', function () {
@@ -38,28 +59,46 @@ it('publishes prices as integer minor units keyed by interval', function () {
 
     $this->getJson(route('pricing'))
         ->assertOk()
-        ->assertJsonPath('plans.2.prices.month.amount_minor', $monthly->amount_minor)
-        ->assertJsonPath('plans.2.prices.month.currency', $monthly->currency)
-        ->assertJsonPath('plans.2.prices.year.amount_minor', 49_000);
+        ->assertJsonPath('plans.1.prices.month.amount_minor', $monthly->amount_minor)
+        ->assertJsonPath('plans.1.prices.month.currency', $monthly->currency)
+        ->assertJsonPath('plans.1.prices.year.amount_minor', 49_000);
 });
 
 it('publishes the limits so the table needs no retyping', function () {
     $this->getJson(route('pricing'))
         ->assertOk()
-        // The free plan's seats, straight off plan_features - unit included, so
-        // the marketing site can write "2 seats" without knowing the noun.
-        ->assertJsonFragment(['key' => 'seats', 'name' => 'Seats', 'unit' => 'seat', 'value' => 2])
+        // Starter's seats, straight off plan_features - unit included, so the
+        // marketing site can write "5 seats" without knowing the noun.
+        ->assertJsonFragment(['key' => 'seats', 'name' => 'Seats', 'unit' => 'seat', 'value' => 5])
         // Plans carry only limits something actually meters, so `projects` is
         // deliberately absent rather than published as a limit nobody enforces.
         ->assertJsonMissing(['key' => 'projects']);
 });
 
-// Section 11: "Two buttons, two destinations."
+/*
+ * Section 11 used to describe two buttons and two destinations, one of them
+ * "Start free". There is one destination now, because there is no free tier:
+ * every plan is bought, and every plan carries its own code through signup.
+ */
 it('gives each plan the signup url that button should point at', function () {
     $response = $this->getJson(route('pricing'))->assertOk();
 
-    expect($response->json('plans.0.signup_url'))->toBe(route('register'))
-        ->and($response->json('plans.2.signup_url'))->toBe(route('register', ['plan' => 'pro']));
+    expect($response->json('plans.0.signup_url'))->toBe(route('register', ['plan' => 'starter']))
+        ->and($response->json('plans.1.signup_url'))->toBe(route('register', ['plan' => 'pro']));
+});
+
+/*
+ * The monthly/annual toggle chooses an interval as much as the buttons choose a
+ * plan. A link carrying only the plan handed somebody who picked annual a
+ * monthly trial, so every price carries its own.
+ */
+it('gives each price a signup url that names its billing interval', function () {
+    $response = $this->getJson(route('pricing'))->assertOk();
+
+    expect($response->json('plans.1.prices.month.signup_url'))
+        ->toBe(route('register', ['plan' => 'pro', 'interval' => 'month']))
+        ->and($response->json('plans.1.prices.year.signup_url'))
+        ->toBe(route('register', ['plan' => 'pro', 'interval' => 'year']));
 });
 
 /*
@@ -77,14 +116,14 @@ it('reflects a price change made in the admin console', function () {
 
     $this->getJson(route('pricing'))
         ->assertOk()
-        ->assertJsonPath('plans.2.prices.month.amount_minor', 7900);
+        ->assertJsonPath('plans.1.prices.month.amount_minor', 7900);
 });
 
 it('reflects a limit change made in the admin console', function () {
-    $free = Plan::where('is_free', true)->firstOrFail();
-    $seats = $free->features()->where('key', 'seats')->firstOrFail();
+    $starter = Plan::where('code', 'starter')->firstOrFail();
+    $seats = $starter->features()->where('key', 'seats')->firstOrFail();
 
-    app(CatalogContract::class)->syncFeatures($free, [$seats->id => 4]);
+    app(CatalogContract::class)->syncFeatures($starter, [$seats->id => 4]);
 
     $this->getJson(route('pricing'))
         ->assertOk()
@@ -115,8 +154,8 @@ it('never publishes an archived price', function () {
 
     $response = $this->getJson(route('pricing'))->assertOk();
 
-    expect($response->json('plans.2.prices'))->toHaveKey('month')
-        ->and($response->json('plans.2.prices'))->not->toHaveKey('year');
+    expect($response->json('plans.1.prices'))->toHaveKey('month')
+        ->and($response->json('plans.1.prices'))->not->toHaveKey('year');
 });
 
 /*

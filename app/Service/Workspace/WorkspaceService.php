@@ -40,7 +40,7 @@ class WorkspaceService implements WorkspaceContract
             $workspace = Workspace::create([
                 'name' => $name,
                 'slug' => $this->uniqueSlug($name),
-                'billing_status' => BillingStatus::Free,
+                'billing_status' => BillingStatus::Unpaid,
                 'access_status' => AccessStatus::Active,
                 'settings' => [],
             ]);
@@ -54,7 +54,7 @@ class WorkspaceService implements WorkspaceContract
 
             $owner->update(['current_workspace_id' => $workspace->id]);
 
-            // Throws NoFreePlanConfigured if the catalog is not set up, which
+            // Throws NoFloorPlanConfigured if the catalog is not set up, which
             // takes the workspace and its membership down with it.
             $this->entitlements->rebuild($workspace);
             $this->memberships->syncSeats($workspace);

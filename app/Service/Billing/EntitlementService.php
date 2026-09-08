@@ -7,7 +7,7 @@ use App\Contract\Billing\UsageContract;
 use App\Enums\AddonKind;
 use App\Enums\EntitlementSource;
 use App\Exceptions\Domain\LimitReached;
-use App\Exceptions\Domain\NoFreePlanConfigured;
+use App\Exceptions\Domain\NoFloorPlanConfigured;
 use App\Models\AdminUser;
 use App\Models\Feature;
 use App\Models\Plan;
@@ -146,7 +146,12 @@ class EntitlementService implements EntitlementContract
     private function resolve(Workspace $workspace): array
     {
         $subscription = $this->liveSubscription($workspace);
-        $plan = $subscription?->plan ?? $this->freePlan();
+        /*
+         * No live subscription means nobody is paying, and there is no free
+         * tier to fall back to - only the floor, which grants nothing that
+         * needs granting because an expired workspace cannot write at all.
+         */
+        $plan = $subscription?->plan ?? $this->floorPlan();
 
         $resolved = [];
 
@@ -222,12 +227,19 @@ class EntitlementService implements EntitlementContract
             ->first();
     }
 
-    private function freePlan(): Plan
+    /**
+     * The one plan a workspace rests on when no subscription is live.
+     *
+     * Still marked by `is_free`, which is now a historical name for "the floor"
+     * - the column carries a partial unique index guaranteeing exactly one, and
+     * that guarantee is the reason this can assume a single row.
+     */
+    private function floorPlan(): Plan
     {
         $plan = Plan::query()->where('is_free', true)->with('features')->first();
 
         if ($plan === null) {
-            throw new NoFreePlanConfigured;
+            throw new NoFloorPlanConfigured;
         }
 
         return $plan;

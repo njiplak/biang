@@ -4,7 +4,7 @@ use App\Contract\Billing\UsageContract;
 use App\Contract\Workspace\WorkspaceContract;
 use App\Enums\BillingStatus;
 use App\Enums\WorkspaceRole;
-use App\Exceptions\Domain\NoFreePlanConfigured;
+use App\Exceptions\Domain\NoFloorPlanConfigured;
 use App\Models\AdminUser;
 use App\Models\Feature;
 use App\Models\Plan;
@@ -19,9 +19,9 @@ beforeEach(function () {
     $this->seats = Feature::factory()->create(['key' => Features::SEATS]);
 });
 
-function withFreePlan(int $seats = 3): Plan
+function withFloorPlan(int $seats = 3): Plan
 {
-    $plan = Plan::factory()->free()->create();
+    $plan = Plan::factory()->floor()->create();
     $plan->features()->attach(Feature::where('key', Features::SEATS)->first(), ['value' => $seats]);
 
     return $plan;
@@ -31,13 +31,13 @@ function withFreePlan(int $seats = 3): Plan
 // tier. The owner membership and the entitlement snapshot are part of "created",
 // not a follow-up step someone might forget.
 it('creates a workspace with its owner, entitlements and seat count in one go', function () {
-    withFreePlan();
+    withFloorPlan();
     $user = User::factory()->create();
 
     $workspace = $this->service->create($user, 'Acme Inc');
 
     expect($workspace->name)->toBe('Acme Inc')
-        ->and($workspace->billing_status)->toBe(BillingStatus::Free)
+        ->and($workspace->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($workspace->owners()->count())->toBe(1)
         ->and($user->fresh()->roleIn($workspace))->toBe(WorkspaceRole::Owner)
         ->and(WorkspaceEntitlement::withoutWorkspaceScope()->where('workspace_id', $workspace->id)->count())->toBe(1)
@@ -45,7 +45,7 @@ it('creates a workspace with its owner, entitlements and seat count in one go', 
 });
 
 it('gives every workspace a distinct slug', function () {
-    withFreePlan();
+    withFloorPlan();
     $user = User::factory()->create();
 
     $first = $this->service->create($user, 'Acme Inc');
@@ -55,7 +55,7 @@ it('gives every workspace a distinct slug', function () {
 });
 
 it('points the creator at their new workspace', function () {
-    withFreePlan();
+    withFloorPlan();
     $user = User::factory()->create();
 
     $workspace = $this->service->create($user, 'Acme Inc');
@@ -71,7 +71,7 @@ it('commits nothing at all when entitlement resolution fails', function () {
     $user = User::factory()->create();
 
     expect(fn () => $this->service->create($user, 'Acme Inc'))
-        ->toThrow(NoFreePlanConfigured::class);
+        ->toThrow(NoFloorPlanConfigured::class);
 
     expect(Workspace::count())->toBe(0)
         ->and(WorkspaceMember::count())->toBe(0)
@@ -81,7 +81,7 @@ it('commits nothing at all when entitlement resolution fails', function () {
 
 // Section 3: the last owner has to hand ownership over before they can leave.
 it('transfers ownership and demotes the previous owner to admin', function () {
-    withFreePlan();
+    withFloorPlan();
     $owner = User::factory()->create();
     $workspace = $this->service->create($owner, 'Acme Inc');
     $successor = WorkspaceMember::factory()->for($workspace)->create(['role' => WorkspaceRole::Member]);
@@ -94,7 +94,7 @@ it('transfers ownership and demotes the previous owner to admin', function () {
 });
 
 it('suspends a workspace with the staff member and reason on record', function () {
-    withFreePlan();
+    withFloorPlan();
     $workspace = $this->service->create(User::factory()->create(), 'Acme Inc');
     $admin = AdminUser::factory()->create();
 
@@ -108,8 +108,11 @@ it('suspends a workspace with the staff member and reason on record', function (
 });
 
 it('lifts a suspension', function () {
-    withFreePlan();
+    withFloorPlan();
     $workspace = $this->service->create(User::factory()->create(), 'Acme Inc');
+    // Paying, so lifting the suspension leaves a workspace that can write -
+    // otherwise this would pass for the wrong reason once it is unsuspended.
+    $workspace->update(['billing_status' => App\Enums\BillingStatus::Active]);
     $this->service->suspend($workspace, AdminUser::factory()->create(), 'Investigation');
 
     $this->service->unsuspend($workspace);

@@ -32,15 +32,35 @@ beforeEach(function () {
     $this->usage = app(UsageContract::class);
 
     $this->workspace = app(WorkspaceContract::class)->create(User::factory()->create(), 'Acme Inc');
+
+    /*
+     * Paying, because there is no free tier: an unpaid workspace is read-only
+     * whatever its limits say, and these tests are about the limit machinery,
+     * not about being expired.
+     */
+    subscribeWorkspace($this->workspace);
+    capSeats($this->workspace, 2);
 });
 
 /**
  * Puts a limit for $key on the plan this workspace is on, then rebuilds the
  * snapshot the enforcement layer actually reads.
  */
-function limitFreePlanTo(string $key, ?int $value): void
+/**
+ * Move a limit on the plan the workspace is actually paying for.
+ *
+ * It used to move the free plan, which was where a workspace with no
+ * subscription got its limits. There is no free tier now - the floor grants
+ * nothing that needs granting, because an expired workspace cannot write at
+ * all - so the limit under test has to live on a plan somebody bought.
+ */
+function limitPlanTo(string $key, ?int $value): void
 {
-    $plan = Plan::firstWhere('is_free', true);
+    $plan = App\Models\Subscription::withoutWorkspaceScope()
+        ->where('workspace_id', test()->workspace->id)
+        ->live()
+        ->firstOrFail()
+        ->plan;
     $feature = Feature::firstWhere('key', $key);
 
     $plan->features()->syncWithoutDetaching([$feature->id => ['value' => $value]]);
@@ -50,7 +70,7 @@ function limitFreePlanTo(string $key, ?int $value): void
 }
 
 it('allows a write that stays inside the limit', function () {
-    // Free plan carries 2 seats.
+    // The plan they pay for carries 2 seats.
     expect(fn () => $this->entitlements->assertAllows($this->workspace, 'seats', 2))
         ->not->toThrow(LimitReached::class);
 });
@@ -139,7 +159,7 @@ it('confirms an unmeasured limit can never fire', function () {
     // A limit on a key nothing increments, which is exactly why PlanSeeder no
     // longer ships one: usage stays at zero, so the limit reads as enforced
     // while being decorative.
-    limitFreePlanTo('projects', 3);
+    limitPlanTo('projects', 3);
 
     $this->usage->evaluate($this->workspace);
 
@@ -156,7 +176,7 @@ it('blocks on any metric the moment something meters it', function () {
     // The limit is attached HERE rather than read off the seeder. Plans ship
     // only measured limits now, so a test that borrowed a decorative one was
     // really asserting the seeder's contents, not the machinery.
-    limitFreePlanTo('projects', 3);
+    limitPlanTo('projects', 3);
 
     $this->usage->setGauge($this->workspace, 'projects', 4);
     $this->usage->evaluate($this->workspace);

@@ -130,7 +130,7 @@ it('applies a retried event that can now be matched', function () {
     expect($event->fresh()->processed_at)->not->toBeNull()
         ->and($event->fresh()->failed_at)->toBeNull()
         ->and($this->subscription->fresh()->status)->toBe(SubscriptionStatus::Canceled)
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 // The reconciler re-checks the flag itself, so this is the second lock.

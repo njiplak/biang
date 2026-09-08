@@ -36,7 +36,13 @@ const columns: ColumnDef<Setting, any>[] = [
     createDateColumn<Setting>('created_at'),
 ];
 
-const routes = { fetch: fetchRoute, destroy: destroyRoute, destroyBulk, show, create };
+const routes = {
+    fetch: fetchRoute,
+    destroy: destroyRoute,
+    destroyBulk,
+    show,
+    create,
+};
 
 export default function SettingIndex() {
     return (
@@ -50,4 +56,6 @@ export default function SettingIndex() {
     );
 }
 
-SettingIndex.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;
+SettingIndex.layout = (page: React.ReactNode) => (
+    <AdminLayout>{page}</AdminLayout>
+);

@@ -95,7 +95,8 @@ const columns: ColumnDef<AuditRow, any>[] = [
         header: 'Detail',
         cell: (ctx) => {
             const changes = ctx.row.original.changes;
-            if (!changes) return <span className="text-muted-foreground">-</span>;
+            if (!changes)
+                return <span className="text-muted-foreground">-</span>;
 
             return (
                 <code className="text-xs text-muted-foreground">
@@ -156,11 +157,11 @@ export default function AuditIndex({
                     to the people who usually ask for one. */}
                 <Button variant="outline" asChild>
                     <a
-                        href={
-                            admin.audit.export.url(
-                                action ? { query: { 'filter[action]': action } } : undefined,
-                            )
-                        }
+                        href={admin.audit.export.url(
+                            action
+                                ? { query: { 'filter[action]': action } }
+                                : undefined,
+                        )}
                     >
                         <Download className="size-4" />
                         Export
@@ -229,9 +230,11 @@ export default function AuditIndex({
                                         {row.workspace_ulid ? (
                                             <Link
                                                 className="underline underline-offset-4"
-                                                href={admin.customer.show(
-                                                    row.workspace_ulid,
-                                                ).url}
+                                                href={
+                                                    admin.customer.show(
+                                                        row.workspace_ulid,
+                                                    ).url
+                                                }
                                             >
                                                 {row.workspace_name}
                                             </Link>
@@ -301,4 +304,6 @@ export default function AuditIndex({
     );
 }
 
-AuditIndex.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;
+AuditIndex.layout = (page: React.ReactNode) => (
+    <AdminLayout>{page}</AdminLayout>
+);

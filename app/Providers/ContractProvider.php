@@ -24,6 +24,7 @@ use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\ReconcilerContract;
 use App\Contract\Billing\SubscriptionContract;
+use App\Contract\Billing\SubscriptionPullerContract;
 use App\Contract\Billing\UsageContract;
 use App\Contract\Billing\WebhookVerifierContract;
 use App\Contract\Public\PricingContract;
@@ -57,6 +58,7 @@ use App\Service\Billing\DodoPaymentGateway;
 use App\Service\Billing\DodoReconciler;
 use App\Service\Billing\EntitlementService;
 use App\Service\Billing\StandardWebhookVerifier;
+use App\Service\Billing\SubscriptionPuller;
 use App\Service\Billing\SubscriptionService;
 use App\Service\Billing\UsageService;
 use App\Service\Public\PricingService;
@@ -102,6 +104,8 @@ class ContractProvider extends ServiceProvider
         WebhookVerifierContract::class => StandardWebhookVerifier::class,
         ReconcilerContract::class => DodoReconciler::class,
         PaymentGatewayContract::class => DodoPaymentGateway::class,
+        // The other way to hear the same news: ask, rather than be told.
+        SubscriptionPullerContract::class => SubscriptionPuller::class,
         // Section 10: a price is only sellable once it exists at Dodo too.
         CatalogPublisherContract::class => CatalogPublisher::class,
 

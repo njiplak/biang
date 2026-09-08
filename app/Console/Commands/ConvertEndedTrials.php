@@ -22,7 +22,7 @@ use Illuminate\Console\Command;
  * What is left for this command is the trial that has NO card behind it: one
  * granted by hand from the admin console (section 16: "Staff can grant one by
  * hand"). There is nothing to charge, so it cannot become a paid subscription -
- * it drops to the free tier, exactly as section 4 says a cancelled trial does.
+ * it goes read-only, exactly as section 4 says a cancelled trial does.
  *
  * This is the leak it used to be. Every ended trial was converted to Active
  * with no payment behind it at all, which handed out the paid product for free
@@ -32,7 +32,7 @@ class ConvertEndedTrials extends Command
 {
     protected $signature = 'billing:convert-trials';
 
-    protected $description = 'Drop ended trials that have no card behind them to the free tier';
+    protected $description = 'Make ended trials read-only when they have no card behind them';
 
     public function handle(SubscriptionContract $subscriptions, BillingNotifierContract $notifier): int
     {
@@ -59,7 +59,7 @@ class ConvertEndedTrials extends Command
             }
 
             // Section 4: "If they cancel during the trial, they are not charged
-            // and the workspace drops to the free tier." A trial with no card
+            // and the workspace goes read-only." A trial with no card
             // reaches the same place by the same logic - nothing to charge.
             $subscriptions->cancel($subscription->workspace);
             $ended++;

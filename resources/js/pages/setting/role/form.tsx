@@ -59,7 +59,9 @@ export default function RoleForm({ role, permissions = [] }: Props) {
 
     const toggleModule = (group: PermissionGroup) => {
         const groupIds = group.permissions.map((p) => p.id);
-        const allSelected = groupIds.every((id) => data.permissions.includes(id));
+        const allSelected = groupIds.every((id) =>
+            data.permissions.includes(id),
+        );
 
         if (allSelected) {
             setData(
@@ -93,13 +95,17 @@ export default function RoleForm({ role, permissions = [] }: Props) {
                         <InputError message={errors?.permissions} />
                         <div className="space-y-2 rounded-md border p-4">
                             {permissions.map((group) => {
-                                const groupIds = group.permissions.map((p) => p.id);
+                                const groupIds = group.permissions.map(
+                                    (p) => p.id,
+                                );
                                 const allSelected = groupIds.every((id) =>
                                     data.permissions.includes(id),
                                 );
                                 const someSelected =
                                     !allSelected &&
-                                    groupIds.some((id) => data.permissions.includes(id));
+                                    groupIds.some((id) =>
+                                        data.permissions.includes(id),
+                                    );
 
                                 return (
                                     <Collapsible key={group.module} defaultOpen>
@@ -112,7 +118,9 @@ export default function RoleForm({ role, permissions = [] }: Props) {
                                                           ? 'indeterminate'
                                                           : false
                                                 }
-                                                onCheckedChange={() => toggleModule(group)}
+                                                onCheckedChange={() =>
+                                                    toggleModule(group)
+                                                }
                                             />
                                             <CollapsibleTrigger className="flex flex-1 items-center gap-1 text-sm font-medium capitalize">
                                                 {group.module}
@@ -120,23 +128,31 @@ export default function RoleForm({ role, permissions = [] }: Props) {
                                             </CollapsibleTrigger>
                                         </div>
                                         <CollapsibleContent>
-                                            <div className="ml-6 mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                                                {group.permissions.map((perm) => (
-                                                    <label
-                                                        key={perm.id}
-                                                        className="flex items-center gap-2 text-sm"
-                                                    >
-                                                        <Checkbox
-                                                            checked={data.permissions.includes(
-                                                                perm.id,
-                                                            )}
-                                                            onCheckedChange={() =>
-                                                                togglePermission(perm.id)
+                                            <div className="mt-2 ml-6 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                                                {group.permissions.map(
+                                                    (perm) => (
+                                                        <label
+                                                            key={perm.id}
+                                                            className="flex items-center gap-2 text-sm"
+                                                        >
+                                                            <Checkbox
+                                                                checked={data.permissions.includes(
+                                                                    perm.id,
+                                                                )}
+                                                                onCheckedChange={() =>
+                                                                    togglePermission(
+                                                                        perm.id,
+                                                                    )
+                                                                }
+                                                            />
+                                                            {
+                                                                perm.name.split(
+                                                                    '.',
+                                                                )[1]
                                                             }
-                                                        />
-                                                        {perm.name.split('.')[1]}
-                                                    </label>
-                                                ))}
+                                                        </label>
+                                                    ),
+                                                )}
                                             </div>
                                         </CollapsibleContent>
                                     </Collapsible>

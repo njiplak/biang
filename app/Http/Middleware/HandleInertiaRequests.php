@@ -70,6 +70,16 @@ class HandleInertiaRequests extends Middleware
             'announcements' => $user === null
                 ? []
                 : app(AnnouncementContract::class)->forUser($user, app(CurrentWorkspace::class)->get()),
+            /*
+             * One-off notices raised on a request that then redirects - a
+             * refused trial, a card form that could not be opened, a payment we
+             * could not match. The page that finally renders is never the page
+             * that knows about them, and a message nobody sees is the same as
+             * no message at all.
+             */
+            'flash' => [
+                'warning' => $request->hasSession() ? $request->session()->get('warning') : null,
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
@@ -157,6 +167,15 @@ class HandleInertiaRequests extends Middleware
             'over_limit_features' => $workspace->over_limit_features,
             'grace_ends_at' => $workspace->grace_ends_at,
             'trial_ends_at' => $subscription?->trial_ends_at,
+            /*
+             * Counted here rather than in the banner. The countdown needs "now",
+             * and reading the clock while React renders is impure - the same
+             * component can render twice and disagree with itself. The server
+             * already knows the date, so it can just answer the question.
+             */
+            'trial_days_left' => $subscription?->trial_ends_at === null
+                ? null
+                : max(0, (int) ceil(now()->diffInDays($subscription->trial_ends_at, false))),
         ];
     }
 }

@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\DB;
  * on [the value metric]." These numbers exist so the app runs locally, and are
  * not a pricing decision - section 10 puts that in the admin console anyway.
  *
- * The free plan is NOT provisional: section 6 requires cancelling to land
- * somewhere, and EntitlementService throws NoFreePlanConfigured without exactly
- * one. That single row is a structural requirement, not a price.
+ * The floor plan is NOT provisional: cancelling has to land somewhere, and
+ * EntitlementService throws NoFloorPlanConfigured without exactly one. That
+ * single row is a structural requirement, not a price.
  */
 class PlanSeeder extends Seeder
 {
@@ -37,18 +37,36 @@ class PlanSeeder extends Seeder
              * never be reached, so advertising one is advertising a fiction.
              * Adding it back is one number in the admin console, no deploy.
              */
-            $free = $this->plan([
+            /*
+             * The floor, not a product. There is no free tier: every plan
+             * carries a price and a card is taken up front, so nothing here is
+             * ever sold, shown on the pricing page, or offered at signup -
+             * hence `is_public => false`.
+             *
+             * Its limits are deliberately UNLIMITED. An expired workspace
+             * cannot write at all, so a seat ceiling here would enforce nothing
+             * while making a cancelled workspace with more people than the
+             * ceiling report itself as "over limit" - naming a problem the
+             * customer cannot fix and hiding the one they can, which is that
+             * nobody is paying.
+             *
+             * The code is still `free` for one reason only: it is the existing
+             * row, `is_free` carries a partial unique index, and renaming it
+             * would buy nothing now that the plan is invisible to customers.
+             */
+            $floor = $this->plan([
                 'code' => 'free',
-                'name' => 'Free',
-                'description' => 'Perpetual free tier. No card, no expiry.',
+                'name' => 'Read-only',
+                'description' => 'Where a workspace rests when no subscription is live. Everything stays readable; nothing can be changed.',
                 'is_free' => true,
+                'is_public' => false,
                 'sort_order' => 10,
             ], [
-                Features::SEATS => 2,
+                Features::SEATS => null,
             ]);
 
-            // A free plan never reaches Dodo (section 12), so it has no price row.
-            $this->assertNoPrices($free);
+            // The floor never reaches Dodo (section 12), so it has no price row.
+            $this->assertNoPrices($floor);
 
             $starter = $this->plan([
                 'code' => 'starter',

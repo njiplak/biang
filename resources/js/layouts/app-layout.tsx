@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import AnnouncementBanner from '@/components/announcement-banner';
 import AppLogo from '@/components/app-logo';
+import FlashBanner from '@/components/flash-banner';
 import ImpersonationBanner from '@/components/impersonation-banner';
 import WorkspaceBanner from '@/components/workspace-banner';
 import WorkspaceSwitcher from '@/components/workspace-switcher';
@@ -53,7 +54,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
         currentUrl === href || currentUrl.startsWith(href + '/');
 
     // Section 3: admins manage people but never billing, and viewers only read.
-    const role = tenancy?.available?.find((w) => w.ulid === current?.ulid)?.role;
+    const role = tenancy?.available?.find(
+        (w) => w.ulid === current?.ulid,
+    )?.role;
     const canSeeBilling = role === 'owner' || role === 'billing_manager';
 
     const nav = [
@@ -185,6 +188,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
                 <div className="flex flex-1 flex-col gap-4 p-3 sm:p-4 md:p-6">
                     <ImpersonationBanner />
+                    <FlashBanner />
                     <AnnouncementBanner />
                     <WorkspaceBanner workspace={current} />
                     {children}

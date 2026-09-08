@@ -65,9 +65,9 @@ class CatalogService implements CatalogContract
             // plan by. Renaming the display name is safe; re-coding it is not.
             //
             // `is_free` is stripped for a different reason: the partial unique
-            // index stops TWO free plans, but nothing stops the free one being
+            // index stops TWO floor plans, but nothing stops the floor one being
             // flipped to false, which would leave cancellation with nowhere to
-            // land and fire NoFreePlanConfigured across the whole app.
+            // land and fire NoFloorPlanConfigured across the whole app.
             unset($attributes['code'], $attributes['is_free']);
 
             $plan->update($attributes);
@@ -121,10 +121,10 @@ class CatalogService implements CatalogContract
     public function archivePlan(Plan $plan): Plan
     {
         return DB::transaction(function () use ($plan) {
-            // Section 6: cancelling drops a workspace onto the free plan, so
-            // archiving it would leave that path with nowhere to land.
+            // Cancelling drops a workspace onto the floor plan, so archiving
+            // it would leave that path with nowhere to land.
             if ($plan->is_free) {
-                throw new CannotArchivePlan($plan, 'it is the free plan every cancellation falls back to');
+                throw new CannotArchivePlan($plan, 'it is the floor plan every cancellation falls back to');
             }
 
             // Idempotent: re-retiring would otherwise move the date on which we
@@ -211,7 +211,7 @@ class CatalogService implements CatalogContract
      * that does not rebuild leaves workspaces enforcing the old numbers until
      * something else happens to touch them.
      *
-     * The free plan is the awkward case: workspaces on it have NO subscription
+     * The floor plan is the awkward case: workspaces on it have NO subscription
      * at all - EntitlementService falls back to it - so they cannot be found by
      * joining subscriptions, and have to be swept separately.
      */

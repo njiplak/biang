@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Enums\BillingInterval;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\Plan;
+use App\Models\PlanPrice;
 use App\Models\User;
 use App\Models\WorkspaceInvitation;
+use App\Service\Billing\SubscriptionService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,8 +21,11 @@ use Inertia\Response;
 /**
  * Spec section 5, the way in.
  *
- * Path A ("Start free") ends here on the free tier with no card. Path B
- * ("Start trial") carries a chosen plan through and continues to the card form;
+ * There is no free tier, so there is one way in rather than two: a plan is
+ * chosen, carried through signup, and ends at the card form. A signup that
+ * names no plan still creates the account - it lands on a read-only workspace
+ * and picks a plan from the billing page.
+ *
  * Path C never reaches this controller at all - an invitee joins an existing
  * workspace and creates nothing.
  *
@@ -32,27 +38,56 @@ class RegisterController extends Controller
     /** Read by WorkspaceController when the workspace is finally named. */
     public const PENDING_PLAN = 'pending_plan_code';
 
+    /**
+     * The chosen billing interval, carried beside the plan.
+     *
+     * Separate from the plan code because they are chosen separately: section
+     * 11's pricing page has a monthly/annual toggle, and carrying only the plan
+     * meant somebody who picked annual was quietly given a monthly trial.
+     */
+    public const PENDING_INTERVAL = 'pending_plan_interval';
+
     /** Path C's token, carried across the signup the same way the plan is. */
     public const PENDING_INVITATION = 'pending_invitation_token';
 
-    /** Section 11's "Start trial" button arrives here as ?plan=pro. */
+    /** Section 11's "Start trial" button arrives here as ?plan=pro&interval=year. */
     public function create(Request $request): Response
     {
-        $plan = $this->chosenPlan($request->query('plan'));
+        $interval = BillingInterval::tryFrom((string) $request->query('interval'))
+            ?? BillingInterval::Month;
 
-        // Held in the SESSION, not a hidden form field. The plan has to survive
-        // the redirect to email verification and the separate workspace-naming
-        // step, and a form field would be gone after the first of those - as
-        // well as being something the visitor could edit.
-        $request->session()->put(self::PENDING_PLAN, $plan?->code);
+        $price = $this->chosenPrice($request->query('plan'), $interval);
+
+        /*
+         * Held in the SESSION, not a hidden form field. The choice has to
+         * survive the redirect to email verification and the separate
+         * workspace-naming step, and a form field would be gone after the first
+         * of those - as well as being something the visitor could edit.
+         *
+         * The RESOLVED interval is stored rather than the requested one, so the
+         * price the card form charges is the price this page quoted even when
+         * the request asked for an interval this plan does not sell.
+         */
+        $request->session()->put(self::PENDING_PLAN, $price?->plan->code);
+        $request->session()->put(self::PENDING_INTERVAL, $price?->billing_interval->value);
 
         $invitation = $this->pendingInvitation($request->query('invitation'));
         $request->session()->put(self::PENDING_INVITATION, $invitation === null ? null : $request->query('invitation'));
 
         return Inertia::render('auth/register', [
-            'plan' => $plan === null ? null : [
-                'code' => $plan->code,
-                'name' => $plan->name,
+            /*
+             * Echoed back rather than only remembered. Somebody who clicked
+             * "Start trial - Pro" on the marketing site was shown a form with
+             * no sign their choice had survived, which is indistinguishable
+             * from having lost it.
+             */
+            'plan' => $price === null ? null : [
+                'code' => $price->plan->code,
+                'name' => $price->plan->name,
+                'interval' => $price->billing_interval->value,
+                'currency' => $price->currency,
+                'amount_minor' => $price->amount_minor,
+                'trial_days' => SubscriptionService::TRIAL_DAYS,
             ],
             // Prefills the form and tells the page why it is asking.
             'invitedEmail' => $invitation?->email,
@@ -75,18 +110,35 @@ class RegisterController extends Controller
     }
 
     /**
+     * The price a signup link actually resolves to, or null if there is nothing
+     * to sell.
+     *
      * Only a plan somebody could actually buy. An unknown, retired, hidden or
      * free code is dropped rather than refused: the visitor followed a link
      * from another project, and the worst outcome should be an ordinary signup,
-     * not an error page.
+     * not an error page. A plan that does not sell the requested interval falls
+     * back to monthly for the same reason.
      */
-    private function chosenPlan(?string $code): ?Plan
+    private function chosenPrice(?string $code, BillingInterval $interval): ?PlanPrice
     {
         if ($code === null || $code === '') {
             return null;
         }
 
-        return Plan::query()->public()->where('is_free', false)->where('code', $code)->first();
+        $plan = Plan::query()->public()->where('is_free', false)->where('code', $code)->first();
+
+        if ($plan === null) {
+            return null;
+        }
+
+        $currency = config('billing.default_currency');
+
+        $price = $plan->activePriceFor($interval, $currency)
+            ?? $plan->activePriceFor(BillingInterval::Month, $currency);
+
+        // setRelation, not a lazy load: the plan is already in hand, and the
+        // payload below reads code and name off it for every request.
+        return $price?->setRelation('plan', $plan);
     }
 
     /**

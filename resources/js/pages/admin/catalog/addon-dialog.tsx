@@ -53,7 +53,9 @@ export function AddonDialog({
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
         const options = {
-            ...createFormResponse(editing ? 'Add-on updated.' : 'Add-on created.'),
+            ...createFormResponse(
+                editing ? 'Add-on updated.' : 'Add-on created.',
+            ),
             onSuccess: () => {
                 setOpen(false);
                 if (!editing) form.reset();
@@ -79,7 +81,11 @@ export function AddonDialog({
                     variant={editing ? 'ghost' : 'default'}
                     size={editing ? 'sm' : 'default'}
                 >
-                    {editing ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                    {editing ? (
+                        <Pencil className="size-4" />
+                    ) : (
+                        <Plus className="size-4" />
+                    )}
                     {editing ? '' : 'New add-on'}
                 </Button>
             </DialogTrigger>
@@ -115,7 +121,9 @@ export function AddonDialog({
                         <Input
                             id="addon-name"
                             value={form.data.name}
-                            onChange={(e) => form.setData('name', e.target.value)}
+                            onChange={(e) =>
+                                form.setData('name', e.target.value)
+                            }
                         />
                         <InputError message={form.errors.name} />
                     </div>
@@ -124,7 +132,9 @@ export function AddonDialog({
                         <Label htmlFor="addon-kind">Kind</Label>
                         <Select
                             value={form.data.kind}
-                            onValueChange={(value) => form.setData('kind', value as never)}
+                            onValueChange={(value) =>
+                                form.setData('kind', value as never)
+                            }
                         >
                             <SelectTrigger id="addon-kind">
                                 <SelectValue />

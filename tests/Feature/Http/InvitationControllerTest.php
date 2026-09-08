@@ -16,6 +16,10 @@ beforeEach(function () {
 
     $this->owner = User::factory()->create();
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
+
+    // Inviting is a write, and there is no free tier: a workspace nobody is
+    // paying for is read-only, so these tests have to buy a plan first.
+    subscribeWorkspace($this->workspace);
 });
 
 it('invites someone by email with a chosen role', function () {
@@ -55,7 +59,9 @@ it('stops a member inviting anyone', function () {
 
 // Section 7: the seat limit surfaces as a message naming the fix, not a 500.
 it('shows the seat limit message rather than failing hard', function () {
-    // free plan seeds 2 seats; owner holds one
+    // two seats on the plan they pay for; the owner already holds one
+    capSeats($this->workspace, 2);
+
     $this->actingAs($this->owner)
         ->post(route('workspace.invitation.store', $this->workspace), [
             'email' => 'a@example.com', 'role' => 'member',

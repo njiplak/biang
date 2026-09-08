@@ -26,7 +26,9 @@ export default function ImpersonationBanner() {
                     <strong>{impersonation.user_name}</strong> (
                     {impersonation.user_email}). Everything you do here is
                     recorded against{' '}
-                    <strong>{impersonation.admin_name ?? 'your account'}</strong>
+                    <strong>
+                        {impersonation.admin_name ?? 'your account'}
+                    </strong>
                     .
                 </span>
             </div>

@@ -358,6 +358,9 @@ function NextTable<T>({
         try {
             setLoading(true);
             setError(null);
+            // Destructured only to strip it: `_refresh` is a cache-buster for
+            // this hook and must never reach the query string.
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { _refresh: _, ...cleanCustomParams } = customParams;
             const params = {
                 page: pagination.pageIndex + 1,
@@ -754,7 +757,10 @@ function NextTable<T>({
                                 {Object.keys(rowSelection).length}
                             </Badge>
                             <span className="text-sm text-muted-foreground">
-                                <span className="hidden sm:inline">of {data.items?.length || 0} row(s) </span>selected
+                                <span className="hidden sm:inline">
+                                    of {data.items?.length || 0} row(s){' '}
+                                </span>
+                                selected
                             </span>
                         </div>
                         <div className="flex space-x-2">

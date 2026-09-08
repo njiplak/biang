@@ -9,10 +9,40 @@ use App\Models\Workspace;
 // independent axes. These tests pin the collapse, especially the combinations
 // section 6 cannot express.
 
-it('reports free when there is no subscription', function () {
+/*
+ * There is no free tier. A workspace with no live subscription - one that never
+ * bought, and one whose subscription ended - keeps everything it has and keeps
+ * it readable, and that is all it may do.
+ */
+it('reports expired when there is no subscription', function () {
     $ws = Workspace::factory()->create();
 
-    expect($ws->displayState())->toBe(WorkspaceDisplayState::Free);
+    expect($ws->displayState())->toBe(WorkspaceDisplayState::Expired)
+        ->and($ws->canWrite())->toBeFalse()
+        ->and($ws->canRead())->toBeTrue()
+        ->and($ws->canExport())->toBeTrue();
+});
+
+it('reports expired once a subscription is cancelled', function () {
+    $ws = Workspace::factory()->create(['billing_status' => BillingStatus::Canceled]);
+
+    expect($ws->displayState())->toBe(WorkspaceDisplayState::Expired)
+        ->and($ws->canWrite())->toBeFalse();
+});
+
+/*
+ * Expired beats over limit, and that order is the point. An expired workspace
+ * cannot write at all, so naming a seat limit would point the customer at a
+ * problem that is not theirs to fix and hide the one that is - nobody is
+ * paying for this workspace.
+ */
+it('prefers expired to over limit', function () {
+    $ws = Workspace::factory()->overLimit()->create([
+        'billing_status' => BillingStatus::Unpaid,
+    ]);
+
+    expect($ws->displayState())->toBe(WorkspaceDisplayState::Expired)
+        ->and($ws->canWrite())->toBeFalse();
 });
 
 it('reports the billing status when access is unremarkable', function () {

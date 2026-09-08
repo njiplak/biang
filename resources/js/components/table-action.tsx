@@ -2,7 +2,12 @@ import { Link } from '@inertiajs/react';
 import { Eye, Trash } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { DeleteDialog } from './delete-dialog';
 
 type TableActionProps = {
@@ -12,7 +17,12 @@ type TableActionProps = {
     children?: React.ReactNode; // ✅ tambahkan ini
 };
 
-export function TableAction({ id, showUrl, onDelete, children }: TableActionProps) {
+export function TableAction({
+    id,
+    showUrl,
+    onDelete,
+    children,
+}: TableActionProps) {
     const [deleteId, setDeleteId] = useState<number | string | null>(null);
 
     return (

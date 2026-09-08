@@ -26,7 +26,9 @@ it('grants a stranger nothing at all', function () {
 });
 
 it('grants an owner everything', function () {
-    $ws = Workspace::factory()->create();
+    // Paying, because writing is now something a live plan buys - an expired
+    // workspace refuses its owner the same as anybody else.
+    $ws = Workspace::factory()->paying()->create();
     $owner = memberOf($ws, WorkspaceRole::Owner);
 
     expect($owner->can('view', $ws))->toBeTrue()
@@ -41,7 +43,7 @@ it('grants an owner everything', function () {
 // Section 3: admins manage people and settings, and explicitly cannot see or
 // touch billing.
 it('keeps an admin out of billing', function () {
-    $ws = Workspace::factory()->create();
+    $ws = Workspace::factory()->paying()->create();
     $admin = memberOf($ws, WorkspaceRole::Admin);
 
     expect($admin->can('inviteMembers', $ws))->toBeTrue()

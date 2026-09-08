@@ -54,20 +54,32 @@ export default function IndexPage<T extends { id: number | string }>({
 
     return (
         <>
-            <DeleteDialog id={deleteId} onDelete={onDelete} onOpenChange={setDeleteId} />
+            <DeleteDialog
+                id={deleteId}
+                onDelete={onDelete}
+                onOpenChange={setDeleteId}
+            />
 
             <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-col">
                         <h1 className="text-xl font-semibold">{title}</h1>
-                        <p className="hidden text-sm text-gray-500 sm:block">{description}</p>
+                        <p className="hidden text-sm text-gray-500 sm:block">
+                            {description}
+                        </p>
                     </div>
                     <div className="flex gap-2">
                         {headerActions}
                         {!hideAdd && (
-                            <Button onClick={() => router.visit(routes.create().url)}>
+                            <Button
+                                onClick={() =>
+                                    router.visit(routes.create().url)
+                                }
+                            >
                                 <Plus className="size-4" />
-                                <span className="hidden sm:inline">{addLabel}</span>
+                                <span className="hidden sm:inline">
+                                    {addLabel}
+                                </span>
                             </Button>
                         )}
                     </div>

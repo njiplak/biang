@@ -107,7 +107,7 @@ it('drops a cardless trial to the free tier rather than granting it free', funct
     $this->artisan('billing:convert-trials')->assertSuccessful();
 
     expect($sub->fresh()->status)->toBe(SubscriptionStatus::Canceled)
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
     Notification::assertSentTo($this->owner, TrialEndedUnpaidNotification::class);
 });
 

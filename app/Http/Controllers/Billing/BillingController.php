@@ -5,22 +5,30 @@ namespace App\Http\Controllers\Billing;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
+use App\Contract\Billing\SubscriptionPullerContract;
 use App\Contract\Billing\UsageContract;
+use App\Enums\CancellationFeedback;
+use App\Enums\PullOutcome;
+use App\Exceptions\Domain\ProviderLookupFailed;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\AddonPurchaseRequest;
 use App\Http\Requests\Billing\AddonQuantityRequest;
+use App\Http\Requests\Billing\CancelSubscriptionRequest;
 use App\Http\Requests\Billing\PlanPriceRequest;
 use App\Models\Addon;
 use App\Models\AddonPrice;
+use App\Models\InvoiceSummary;
 use App\Models\Plan;
 use App\Models\PlanPrice;
 use App\Models\Workspace;
 use App\Models\WorkspaceEntitlement;
 use App\Service\Billing\SubscriptionService;
 use App\Support\CurrentWorkspace;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -37,16 +45,45 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class BillingController extends Controller
 {
+    /**
+     * Enough for a customer who reloads the page a few times while their
+     * payment settles, and far short of what a refresh loop would need to turn
+     * this page into a denial-of-service on our own provider quota.
+     */
+    private const PULL_ATTEMPTS = 10;
+
+    private const PULL_DECAY_SECONDS = 60;
+
     public function __construct(
         private readonly SubscriptionContract $subscriptions,
         private readonly EntitlementContract $entitlements,
         private readonly UsageContract $usage,
         private readonly PaymentGatewayContract $gateway,
+        private readonly SubscriptionPullerContract $puller,
     ) {}
 
-    public function index(): Response
+    public function index(): Response|RedirectResponse
     {
         $workspace = $this->workspace();
+
+        /*
+         * Dodo sends the customer back here as
+         * `?status=active&subscription_id=sub_...` once the card is entered.
+         *
+         * Section 8 keeps their records authoritative for money, so the only
+         * honest way to answer "did that work?" is to ask them - the webhook
+         * that would otherwise tell us may be seconds away, may have been
+         * rejected at the door, or may never come. Until this existed the
+         * customer landed on a page that said Free.
+         */
+        $returning = request()->input('subscription_id');
+
+        // Only a genuine string is an id. `?subscription_id[]=a` arrives as an
+        // array, and stringifying one gives the literal "Array" - a warning in
+        // the log and a lookup at Dodo for a subscription nobody has.
+        if (is_string($returning) && $returning !== '') {
+            return $this->settleReturn($workspace, $returning);
+        }
 
         return Inertia::render('billing/index', [
             'workspace' => [
@@ -55,13 +92,14 @@ class BillingController extends Controller
                 'state_label' => $workspace->displayState()->label(),
                 'over_limit_features' => $workspace->over_limit_features,
                 // Section 5's link out to Dodo, but only once there is an
-                // account there to open. A free workspace never reaches them
-                // at all (section 12), so the button would lead nowhere.
+                // account there to open. A workspace that has never bought
+                // never reaches them, so the button would lead nowhere.
                 'has_payment_account' => filled($workspace->dodo_customer_id),
             ],
             'subscription' => $this->subscriptionPayload($workspace),
+            'invoices' => $this->invoicePayload($workspace),
             'usage' => $this->usagePayload($workspace),
-            'plans' => $this->planPayload(),
+            'plans' => $this->planPayload($workspace),
             /*
              * Section 12: "Trial eligibility: one per person, ever." The person,
              * not the workspace - so this is asked of whoever is looking at the
@@ -78,6 +116,56 @@ class BillingController extends Controller
             // and which ones are on offer depends on the current plan.
             'addons' => $this->addonPayload($workspace),
         ]);
+    }
+
+    /**
+     * Settle a customer who has just come back from the card form, then send
+     * them to the clean page.
+     *
+     * The redirect is what consumes the parameter: without it a reload would
+     * ask Dodo again, and the browser back button would ask a third time.
+     *
+     * Nothing in the URL is trusted. `status` is ignored outright - anyone can
+     * type it - and the id is only ever used to ask a question, with the answer
+     * checked against this workspace before it moves anything.
+     */
+    private function settleReturn(Workspace $workspace, string $providerSubscriptionId): RedirectResponse
+    {
+        RateLimiter::attempt(
+            "billing-pull:{$workspace->id}",
+            self::PULL_ATTEMPTS,
+            function () use ($workspace, $providerSubscriptionId) {
+                try {
+                    $outcome = $this->puller->pull($providerSubscriptionId, $workspace);
+                } catch (ProviderLookupFailed $e) {
+                    // This page renders from OUR records and has to keep
+                    // working when Dodo does not, so an unreachable provider is
+                    // a note on a working page, never an error page.
+                    session()->flash('warning', $e->userMessage());
+
+                    return;
+                }
+
+                if ($outcome === PullOutcome::Applied || $outcome === PullOutcome::InSync) {
+                    return;
+                }
+
+                /*
+                 * Deliberately the same message for NotFound and Mismatched.
+                 * The difference between "we have nothing to attach this to"
+                 * and "this is somebody else's subscription" is not the
+                 * customer's to learn from a page they can put any id into.
+                 */
+                session()->flash('warning', 'We could not match that payment to this workspace yet. If you were charged, this page will catch up shortly.');
+            },
+            self::PULL_DECAY_SECONDS,
+        );
+
+        // A plan carried from the marketing site is the only other parameter
+        // this page reads, and it must survive being sent round again.
+        $plan = request()->input('plan');
+
+        return redirect()->route('billing.index', is_string($plan) && $plan !== '' ? ['plan' => $plan] : []);
     }
 
     /**
@@ -101,9 +189,15 @@ class BillingController extends Controller
             throw new TrialAlreadyConsumed($buyer);
         }
 
+        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        // Before the card form, not after the charge. DowngradeBlocked names
+        // exactly how many people have to go.
+        $this->subscriptions->assertPlanFits($workspace, $price);
+
         $url = $this->gateway->createCheckout(
             $workspace,
-            PlanPrice::findOrFail($request->validated('plan_price_id')),
+            $price,
             $buyer,
             route('billing.index'),
             route('billing.index'),
@@ -165,10 +259,21 @@ class BillingController extends Controller
     public function checkout(PlanPriceRequest $request): SymfonyResponse
     {
         $workspace = $this->workspace();
+        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        /*
+         * Section 7's seat check, before anybody is charged.
+         *
+         * changePlan has always done this; buying did not, so a read-only
+         * workspace with 25 people could pick a 5-seat plan, pay, and land
+         * straight in the hard block. Dodo is merchant of record, which makes
+         * that a refund request rather than something we can undo.
+         */
+        $this->subscriptions->assertPlanFits($workspace, $price);
 
         $url = $this->gateway->createCheckout(
             $workspace,
-            PlanPrice::findOrFail($request->validated('plan_price_id')),
+            $price,
             $request->user(),
             route('billing.index'),
             route('billing.index'),
@@ -184,7 +289,7 @@ class BillingController extends Controller
      * Same shape as checkout() and for the same reason - the destination is
      * Dodo's, and PortalUnavailable renders as a message rather than an error
      * page, because a workspace with no payment account is an ordinary state
-     * (the free tier, and every workspace granted a plan by hand).
+     * (one that has never bought, and every workspace granted a plan by hand).
      */
     public function portal(): SymfonyResponse
     {
@@ -193,11 +298,56 @@ class BillingController extends Controller
         return Inertia::location($url);
     }
 
-    public function cancel(): RedirectResponse
+    /**
+     * Section 15 wants voluntary churn split by reason, so the answer rides
+     * along - optional, always. `routes/web/billing.php` commits to never
+     * blocking the exit, and a required question is a block.
+     */
+    public function cancel(CancelSubscriptionRequest $request): RedirectResponse
     {
-        $this->subscriptions->cancel($this->workspace());
+        $feedback = $request->validated('feedback');
+
+        $this->subscriptions->cancel(
+            $this->workspace(),
+            $feedback === null ? null : CancellationFeedback::from($feedback),
+            $request->validated('comment'),
+        );
 
         return back();
+    }
+
+    /**
+     * What a plan change would cost, before it is made.
+     *
+     * Section 4 prorates a switch and section 8 makes that arithmetic Dodo's,
+     * so they are the only ones who can answer. We charged it without ever
+     * showing it, which is the most reliable way to turn an upgrade into a
+     * "why was I charged this?" ticket.
+     *
+     * A GET returning JSON rather than an Inertia page: it answers a question
+     * the customer asked by hovering over a button, and must not replace what
+     * they are looking at.
+     */
+    public function previewPlan(PlanPriceRequest $request): JsonResponse
+    {
+        $workspace = $this->workspace();
+        $subscription = $workspace->subscription()->first();
+
+        if ($subscription === null || ! $subscription->isHeldWithProvider()) {
+            // Nothing to prorate against: a first purchase is priced by the
+            // checkout itself, and a comped plan has no money behind it.
+            return response()->json(['preview' => null]);
+        }
+
+        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        // The same refusal the change itself would make, so the dialog never
+        // quotes a price for a move that will be blocked.
+        $this->subscriptions->assertPlanFits($workspace, $price);
+
+        return response()->json([
+            'preview' => $this->gateway->previewPlanChange($subscription, $price),
+        ]);
     }
 
     /** Every action on this page is a billing action, so the check is uniform. */
@@ -234,6 +384,36 @@ class BillingController extends Controller
         ];
     }
 
+    /**
+     * Section 8: "We keep a summary; the document itself stays with the
+     * provider." The summary is what this shows - every figure copied from
+     * Dodo, never computed here, because they are merchant of record.
+     *
+     * Bounded to the most recent year rather than every invoice ever: this is
+     * the "what was I charged" answer, and the full history lives on their
+     * portal, which the button above already opens.
+     */
+    private function invoicePayload(Workspace $workspace): array
+    {
+        return InvoiceSummary::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->orderByDesc('issued_at')
+            ->limit(12)
+            ->get()
+            ->map(fn (InvoiceSummary $invoice) => [
+                'id' => $invoice->id,
+                'number' => $invoice->number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'total_minor' => $invoice->total_minor,
+                'tax_minor' => $invoice->tax_minor,
+                'issued_at' => $invoice->issued_at,
+                // Their document, not ours - null until they give us a link.
+                'hosted_url' => $invoice->hosted_url,
+            ])
+            ->all();
+    }
+
     /** Section 5: usage against EVERY limit, not just the one they breached. */
     private function usagePayload(Workspace $workspace): array
     {
@@ -256,7 +436,7 @@ class BillingController extends Controller
         $subscription = $workspace->subscription()->with('plan.addons.prices', 'items.addon')->first();
 
         if ($subscription === null) {
-            // Section 12: nothing to attach a paid add-on to on the free tier.
+            // Nothing to attach a paid add-on to without a subscription.
             return ['available' => [], 'owned' => []];
         }
 
@@ -293,20 +473,39 @@ class BillingController extends Controller
         return ['available' => $available, 'owned' => $owned];
     }
 
-    private function planPayload(): array
+    /**
+     * Section 7 again: a plan that cannot hold the people already here is not
+     * an offer, and the page has to say so before it is clicked rather than
+     * after the card is charged.
+     */
+    private function planPayload(Workspace $workspace): array
     {
-        return Plan::query()->public()->with('prices')->orderBy('sort_order')->get()
-            ->map(fn (Plan $plan) => [
-                'code' => $plan->code,
-                'name' => $plan->name,
-                'is_free' => $plan->is_free,
-                'prices' => $plan->prices->whereNull('archived_at')->map(fn (PlanPrice $price) => [
-                    'id' => $price->id,
-                    'interval' => $price->billing_interval->value,
-                    'currency' => $price->currency,
-                    'amount_minor' => $price->amount_minor,
-                ])->values()->all(),
-            ])
+        $currentPlanId = $workspace->subscription()->value('plan_id');
+
+        return Plan::query()->public()->with('prices', 'features')->orderBy('sort_order')->get()
+            ->map(function (Plan $plan) use ($workspace, $currentPlanId) {
+                $prices = $plan->prices->whereNull('archived_at')->values();
+
+                // Seats are a PLAN allowance, so any of its prices answers it.
+                $overage = $prices->isEmpty()
+                    ? 0
+                    : $this->subscriptions->seatOverageFor($workspace, $prices->first());
+
+                return [
+                    'code' => $plan->code,
+                    'name' => $plan->name,
+                    'is_current' => $currentPlanId !== null && $plan->id === $currentPlanId,
+                    // How many people have to go before this plan is buyable.
+                    // Zero means it fits.
+                    'seat_overage' => $overage,
+                    'prices' => $prices->map(fn (PlanPrice $price) => [
+                        'id' => $price->id,
+                        'interval' => $price->billing_interval->value,
+                        'currency' => $price->currency,
+                        'amount_minor' => $price->amount_minor,
+                    ])->all(),
+                ];
+            })
             ->all();
     }
 }

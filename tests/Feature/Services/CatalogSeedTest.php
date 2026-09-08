@@ -25,10 +25,23 @@ it('seeds a seats feature, which section 7 needs regardless of the value metric'
     expect(Feature::where('key', Features::SEATS)->exists())->toBeTrue();
 });
 
-it('gives the free plan a real seat allowance', function () {
-    $free = Plan::where('is_free', true)->with('features')->first();
+/*
+ * There is no free tier. The plan marked `is_free` is the FLOOR - where a
+ * workspace rests when no subscription is live - and it is deliberately not
+ * for sale and not on the pricing page.
+ *
+ * Its limits are unlimited on purpose: an expired workspace cannot write at
+ * all, so a ceiling here would enforce nothing while making a cancelled
+ * workspace report itself "over limit" - naming a problem the customer cannot
+ * fix and hiding the one they can.
+ */
+it('keeps the floor plan unsellable and out of the pricing page', function () {
+    $floor = Plan::where('is_free', true)->with('features')->first();
 
-    expect($free->limitFor(Features::SEATS))->toBeGreaterThan(0);
+    expect($floor)->not->toBeNull()
+        ->and($floor->is_public)->toBeFalse()
+        ->and($floor->prices()->count())->toBe(0)
+        ->and($floor->limitFor(Features::SEATS))->toBeNull();
 });
 
 it('gives every non-free plan at least one active price', function () {
@@ -75,17 +88,23 @@ it('supports the full lifecycle on seeded data alone', function () {
     $user = User::factory()->create();
     $workspace = app(WorkspaceContract::class)->create($user, 'Acme Inc');
 
+    // A brand new workspace has bought nothing, so it is read-only from the
+    // start - there is no free tier to land on.
     expect($workspace->seatsUsed())->toBe(1)
-        ->and($workspace->canWrite())->toBeTrue();
+        ->and($workspace->canWrite())->toBeFalse()
+        ->and($workspace->canRead())->toBeTrue();
 
     $paidPrice = PlanPrice::whereHas('plan', fn ($q) => $q->where('is_free', false))->first();
     $subscription = app(SubscriptionContract::class)
         ->grantPlan($workspace, $paidPrice, AdminUser::first(), 'Seeded lifecycle check');
 
-    expect($subscription->plan->is_free)->toBeFalse();
+    expect($subscription->plan->is_free)->toBeFalse()
+        ->and($workspace->fresh()->canWrite())->toBeTrue();
 
     app(SubscriptionContract::class)->cancel($workspace);
 
-    expect($workspace->fresh()->billing_status->value)->toBe('free')
-        ->and($workspace->fresh()->canRead())->toBeTrue();
+    // Back to the floor: everything still here, still readable, nothing writable.
+    expect($workspace->fresh()->billing_status->value)->toBe('unpaid')
+        ->and($workspace->fresh()->canRead())->toBeTrue()
+        ->and($workspace->fresh()->canWrite())->toBeFalse();
 });

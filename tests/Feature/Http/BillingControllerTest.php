@@ -35,7 +35,7 @@ it('shows the billing page to someone who may manage billing', function () {
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('billing/index')
-            ->where('workspace.state', 'free')
+            ->where('workspace.state', 'expired')
             ->where('subscription', null)
             // Section 5: usage against EVERY limit the plan carries. Plans ship
             // only limits something actually meters, so the free plan is seats
@@ -79,7 +79,7 @@ it('sends someone starting a trial to the card form', function () {
         ->and($gateway->checkouts[0]['trial_period_days'])->toBe(14)
         ->and($gateway->checkouts[0]['plan_price_id'])->toBe($this->proPrice->id);
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free)
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($this->owner->fresh()->hasConsumedTrial())->toBeFalse();
 });
 
@@ -95,7 +95,7 @@ it('explains why a second trial is refused', function () {
     // Refused BEFORE the card form, not after. Being asked for a card and then
     // told you were never eligible is the worst order to do this in.
     expect($gateway->checkouts)->toBeEmpty()
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 it('changes plan', function () {
@@ -124,7 +124,7 @@ it('blocks a downgrade that would not fit and says so', function () {
         ->put(route('billing.plan'), ['plan_price_id' => $starter->id]);
 
     $response->assertSessionHasErrors('errors');
-    expect(session('errors')->first('errors'))->toContain('Remove 3 more')
+    expect(session('errors')->first('errors'))->toContain('Remove 3 before choosing it')
         ->and($this->workspace->fresh()->subscription->plan->code)->toBe('pro');
 });
 
@@ -137,7 +137,7 @@ it('cancels to the free tier', function () {
         ->assertRedirect();
 
     $fresh = $this->workspace->fresh();
-    expect($fresh->billing_status)->toBe(BillingStatus::Free)
+    expect($fresh->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($fresh->canRead())->toBeTrue();
 });
 

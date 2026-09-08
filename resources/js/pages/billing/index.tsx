@@ -2,6 +2,8 @@ import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { CreditCard, ExternalLink } from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
+import { CancelDialog } from './cancel-dialog';
+import { SwitchPlanDialog } from './switch-plan-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -11,7 +13,27 @@ type Price = {
     currency: string;
     amount_minor: number;
 };
-type Plan = { code: string; name: string; is_free: boolean; prices: Price[] };
+// Every plan on this page carries a price: the floor plan is not public and
+// never reaches it.
+type Plan = {
+    code: string;
+    name: string;
+    is_current: boolean;
+    // How many people have to go before this plan is buyable. 0 means it fits.
+    seat_overage: number;
+    prices: Price[];
+};
+
+type Invoice = {
+    id: number;
+    number: string | null;
+    status: string;
+    currency: string;
+    total_minor: number;
+    tax_minor: number;
+    issued_at: string | null;
+    hosted_url: string | null;
+};
 
 type OwnedAddon = {
     addon_id: number;
@@ -33,7 +55,8 @@ type Props = {
         state: string;
         state_label: string;
         over_limit_features: string[] | null;
-        // false on the free tier, which never reaches the provider at all
+        // false until they have bought something: a workspace that has never
+        // paid has no account with the provider at all
         has_payment_account: boolean;
     };
     subscription: {
@@ -54,9 +77,13 @@ type Props = {
         source: string;
     }[];
     plans: Plan[];
+    // Section 8: we keep the summary, the document stays with the provider.
+    invoices: Invoice[];
     addons: { available: AvailableAddon[]; owned: OwnedAddon[] };
     // section 12: one trial per person, ever - so this is about the viewer
     can_start_trial: boolean;
+    // Section 11: the plan carried here from the marketing site, if any.
+    preselected_plan: string | null;
 };
 
 const money = (minor: number, currency: string) =>
@@ -69,8 +96,10 @@ export default function BillingIndex({
     subscription,
     usage,
     plans,
+    invoices,
     addons,
     can_start_trial,
+    preselected_plan,
 }: Props) {
     const errors = usePage().props.errors as Record<string, string> | undefined;
 
@@ -137,7 +166,10 @@ export default function BillingIndex({
                     plans={plans}
                     subscription={subscription}
                     canStartTrial={can_start_trial}
+                    preselected={preselected_plan}
                 />
+
+                <Invoices invoices={invoices} />
 
                 <Addons
                     addons={addons}
@@ -180,18 +212,16 @@ function CurrentPlan({
                             ' · granted by our team'}
                     </span>
                     <span className="flex items-center gap-1">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.delete('/billing')}
-                        >
-                            Cancel
-                        </Button>
+                        {/* Never a bare button. Cancelling now takes away the
+                            ability to work, so it says so first. */}
+                        <CancelDialog />
                     </span>
                 </div>
             ) : (
                 <p className="border-t border-border py-3 text-sm text-muted-foreground">
-                    Free tier. No card on file.
+                    No active subscription. This workspace is read-only — your
+                    data is all still here. Choose a plan below to start making
+                    changes again.
                 </p>
             )}
 
@@ -221,69 +251,151 @@ function CurrentPlan({
  * switching an existing subscription is our own PUT (section 7 keeps plan
  * changes inside the app), whereas a first purchase has to go through Dodo's
  * checkout because that is where the card is entered.
+ *
+ * The interval toggle is here rather than one button per price for a
+ * commercial reason: annual is the cheaper-per-month option and the whole
+ * point of offering it, and a row of four buttons hides that behind arithmetic
+ * the customer has to do themselves.
  */
 function Plans({
     plans,
     subscription,
     canStartTrial,
+    preselected,
 }: {
     plans: Plan[];
     subscription: Props['subscription'];
     canStartTrial: boolean;
+    preselected: string | null;
 }) {
+    const intervals = Array.from(
+        new Set(plans.flatMap((plan) => plan.prices.map((p) => p.interval))),
+    );
+
+    // Whatever they are already paying on, so the page opens on the terms they
+    // actually have rather than resetting them to monthly.
+    const [interval, setInterval] = useState(
+        subscription?.interval ??
+            (intervals.includes('year') ? 'year' : intervals[0]),
+    );
+
+    if (plans.length === 0) return null;
+
     return (
         <section className="flex flex-col gap-2">
-            <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-muted-foreground">
+                    Plans
+                </h2>
 
-            {plans.map((plan) => (
-                <div
-                    key={plan.code}
-                    className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-3 text-sm"
-                >
-                    <span>{plan.name}</span>
-
-                    <span className="flex flex-wrap items-center gap-2">
-                        {plan.prices.map((price) => (
-                            <Button
-                                key={price.id}
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                    subscription
-                                        ? router.put(
-                                              '/billing/plan',
-                                              { plan_price_id: price.id },
-                                              { preserveScroll: true },
-                                          )
-                                        : router.post(
-                                              '/billing/checkout',
-                                              { plan_price_id: price.id },
-                                              { preserveScroll: true },
-                                          )
-                                }
+                {intervals.length > 1 && (
+                    <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                        {intervals.map((option) => (
+                            <button
+                                key={option}
+                                type="button"
+                                onClick={() => setInterval(option)}
+                                className={`rounded px-2 py-1 text-xs capitalize ${
+                                    interval === option
+                                        ? 'bg-muted font-medium'
+                                        : 'text-muted-foreground'
+                                }`}
                             >
-                                {subscription ? 'Switch to' : 'Subscribe'}{' '}
+                                {option === 'year' ? 'Annual' : 'Monthly'}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {plans.map((plan) => {
+                const price =
+                    plan.prices.find((p) => p.interval === interval) ??
+                    plan.prices[0];
+
+                if (!price) return null;
+
+                // Section 7: a plan that cannot hold the people already here is
+                // not an offer. Said before it is clicked, not after the charge.
+                const blocked = plan.seat_overage > 0;
+
+                return (
+                    <div
+                        key={plan.code}
+                        className={`flex flex-wrap items-center justify-between gap-2 border-t border-border py-3 text-sm ${
+                            plan.code === preselected && !plan.is_current
+                                ? 'bg-muted/40'
+                                : ''
+                        }`}
+                    >
+                        <span className="flex flex-col gap-0.5">
+                            <span className="flex items-center gap-2">
+                                {plan.name}
+                                {plan.is_current && (
+                                    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                                        Current plan
+                                    </span>
+                                )}
+                                {plan.code === preselected &&
+                                    !plan.is_current && (
+                                        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                                            The plan you picked
+                                        </span>
+                                    )}
+                            </span>
+                            {blocked && (
+                                <span className="text-xs text-destructive">
+                                    Remove {plan.seat_overage} member
+                                    {plan.seat_overage === 1 ? '' : 's'} before
+                                    choosing this plan — nothing is deleted by
+                                    doing so.
+                                </span>
+                            )}
+                        </span>
+
+                        <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-muted-foreground">
                                 {money(price.amount_minor, price.currency)}/
                                 {price.interval}
-                            </Button>
-                        ))}
+                            </span>
 
-                        {/* Section 4: a card is taken up front and it
-                            auto-charges on day 15, so this is only offered to
-                            someone who has never spent their one trial. */}
-                        {!plan.is_free &&
-                            !subscription &&
-                            canStartTrial &&
-                            plan.prices[0] && (
+                            {!plan.is_current &&
+                                (subscription ? (
+                                    /* Prorated by Dodo, so the number has to
+                                       come from them before it is charged. */
+                                    <SwitchPlanDialog
+                                        planName={plan.name}
+                                        priceId={price.id}
+                                        disabled={blocked}
+                                    />
+                                ) : (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={blocked}
+                                        onClick={() =>
+                                            router.post(
+                                                '/billing/checkout',
+                                                { plan_price_id: price.id },
+                                                { preserveScroll: true },
+                                            )
+                                        }
+                                    >
+                                        Subscribe
+                                    </Button>
+                                ))}
+
+                            {/* Section 4: a card is taken up front and it
+                                auto-charges on day 15, so this is only offered
+                                to someone who has never spent their one trial. */}
+                            {!subscription && canStartTrial && (
                                 <Button
                                     size="sm"
+                                    disabled={blocked}
                                     onClick={() =>
                                         router.post(
                                             '/billing/trial',
-                                            {
-                                                plan_price_id:
-                                                    plan.prices[0].id,
-                                            },
+                                            { plan_price_id: price.id },
                                             { preserveScroll: true },
                                         )
                                     }
@@ -291,9 +403,68 @@ function Plans({
                                     Start trial
                                 </Button>
                             )}
-                    </span>
-                </div>
-            ))}
+                        </span>
+                    </div>
+                );
+            })}
+        </section>
+    );
+}
+
+/**
+ * Section 8: "We keep a summary; the document itself stays with the provider."
+ *
+ * So this is the summary and nothing more - what was charged and when. The
+ * document lives on Dodo's portal, which the button above opens, and a link
+ * straight to one is shown only when they have given us a URL for it.
+ */
+function Invoices({ invoices }: { invoices: Invoice[] }) {
+    if (invoices.length === 0) return null;
+
+    return (
+        <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-muted-foreground">
+                Invoices
+            </h2>
+
+            <table className="w-full text-sm">
+                <tbody>
+                    {invoices.map((invoice) => (
+                        <tr key={invoice.id} className="border-t border-border">
+                            <td className="py-2">
+                                {invoice.issued_at
+                                    ? new Date(
+                                          invoice.issued_at,
+                                      ).toLocaleDateString()
+                                    : '—'}
+                                {invoice.number && (
+                                    <span className="ml-2 text-muted-foreground">
+                                        {invoice.number}
+                                    </span>
+                                )}
+                            </td>
+                            <td className="py-2 text-muted-foreground capitalize">
+                                {invoice.status}
+                            </td>
+                            <td className="py-2 text-right">
+                                {money(invoice.total_minor, invoice.currency)}
+                            </td>
+                            <td className="py-2 text-right">
+                                {invoice.hosted_url && (
+                                    <a
+                                        href={invoice.hosted_url}
+                                        className="underline underline-offset-4"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        View
+                                    </a>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
         </section>
     );
 }
@@ -310,7 +481,7 @@ function Addons({
     addons: Props['addons'];
     hasSubscription: boolean;
 }) {
-    // Section 12: nothing to attach a paid add-on to on the free tier.
+    // Nothing to attach a paid add-on to without a subscription.
     if (!hasSubscription) {
         return null;
     }

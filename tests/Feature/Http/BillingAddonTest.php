@@ -88,7 +88,7 @@ it('refuses to give back seats that are occupied, and says how many', function (
         ->put(route('billing.addon.update'), ['addon_id' => $this->addon->id, 'quantity' => 0])
         ->assertSessionHasErrors('errors');
 
-    expect(session('errors')->first('errors'))->toContain('Remove 2 more')
+    expect(session('errors')->first('errors'))->toContain('Remove 2 before choosing it')
         ->and(app(EntitlementContract::class)->limitFor($this->workspace, Features::SEATS))->toBe(8);
 });
 

@@ -67,7 +67,8 @@ it('refuses to switch to a workspace the user does not belong to', function () {
 
 it('lets an admin rename the workspace', function () {
     $user = User::factory()->create();
-    $workspace = Workspace::factory()->create();
+    // Paying: renaming is a write, and a workspace nobody pays for is read-only.
+    $workspace = Workspace::factory()->paying()->create();
     WorkspaceMember::factory()->for($workspace)->for($user)->admin()->create();
 
     $this->actingAs($user)
@@ -128,6 +129,8 @@ it('lists members with their roles and seat usage', function () {
     // built through the service, so entitlements are resolved the way they are
     // in production - a factory-made workspace has no seat allowance at all
     $workspace = app(WorkspaceContract::class)->create($user, 'Acme Inc');
+    subscribeWorkspace($workspace);
+    capSeats($workspace, 2);
     WorkspaceMember::factory()->for($workspace)->count(2)->create();
 
     $this->actingAs($user)

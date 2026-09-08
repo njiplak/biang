@@ -74,3 +74,70 @@ function subscriptions(): App\Contract\Billing\SubscriptionContract
 {
     return app(App\Contract\Billing\SubscriptionContract::class);
 }
+
+/**
+ * Give a workspace a live paid subscription.
+ *
+ * There is no free tier any more, so this is what buys the right to write
+ * anything at all: a workspace nobody is paying for keeps its data and keeps it
+ * readable, and that is the whole of it. Tests about members, invitations,
+ * limits or settings therefore have to buy a plan first, exactly as a customer
+ * now has to.
+ *
+ * Written directly rather than through SubscriptionService::grantPlan because
+ * that needs an AdminUser and a reason, and most callers here are not testing
+ * the staff-grant path - only standing in a workspace that can write.
+ */
+function subscribeWorkspace(
+    App\Models\Workspace $workspace,
+    App\Models\Plan|string $plan = 'pro',
+): App\Models\Subscription {
+    $plan = $plan instanceof App\Models\Plan
+        ? $plan
+        : App\Models\Plan::where('code', $plan)->firstOrFail();
+
+    $price = $plan->prices()->whereNull('archived_at')->first()
+        ?? App\Models\PlanPrice::factory()->for($plan)->create();
+
+    $subscription = App\Models\Subscription::withoutWorkspaceScope()->create([
+        'workspace_id' => $workspace->id,
+        'plan_id' => $plan->id,
+        'plan_price_id' => $price->id,
+        'status' => App\Enums\SubscriptionStatus::Active,
+        'billing_source' => App\Enums\BillingSource::Manual,
+        'current_period_start' => now(),
+        'current_period_end' => now()->addMonth(),
+    ]);
+
+    $workspace->update(['billing_status' => App\Enums\BillingStatus::Active]);
+
+    // The same two steps every settle() does, so entitlements and the seat
+    // gauge match what the subscription now grants.
+    app(App\Contract\Billing\EntitlementContract::class)->rebuild($workspace);
+    app(App\Contract\Workspace\MembershipContract::class)->syncSeats($workspace);
+
+    return $subscription;
+}
+
+/**
+ * Set the seat allowance of the plan a workspace is on, then rebuild.
+ *
+ * The seeded floor plan used to grant two seats, which made "one more invite
+ * hits the wall" free to set up. The floor grants unlimited now - it has to,
+ * because an expired workspace cannot write anyway and a ceiling there would
+ * only mislabel the reason - so a test about seat limits has to say which
+ * ceiling it means.
+ */
+function capSeats(App\Models\Workspace $workspace, ?int $seats): void
+{
+    $subscription = App\Models\Subscription::withoutWorkspaceScope()
+        ->where('workspace_id', $workspace->id)
+        ->live()
+        ->firstOrFail();
+
+    $feature = App\Models\Feature::where('key', App\Support\Features::SEATS)->firstOrFail();
+
+    $subscription->plan->features()->updateExistingPivot($feature->id, ['value' => $seats]);
+
+    app(App\Contract\Billing\EntitlementContract::class)->rebuild($workspace->fresh());
+}

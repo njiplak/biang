@@ -61,6 +61,16 @@ class PricingService implements PricingContract
                         // the marketing site's business; rounding here would be
                         // a second place for money to go wrong.
                         'amount_minor' => $price->amount_minor,
+                        /*
+                         * Per PRICE, not per plan. The toggle chooses an
+                         * interval as much as the buttons choose a plan, and a
+                         * link that carried only the plan handed somebody who
+                         * picked annual a monthly trial.
+                         */
+                        'signup_url' => route('register', [
+                            'plan' => $plan->code,
+                            'interval' => $price->billing_interval->value,
+                        ]),
                     ],
                 ])
                 ->all(),
@@ -76,14 +86,16 @@ class PricingService implements PricingContract
                 ->values()
                 ->all(),
             /*
-             * Section 11's "two buttons, two destinations", resolved here rather
-             * than assembled by the marketing site. Free goes straight to
-             * signup; a paid plan carries itself through so the trial can start
-             * on the right plan at the end.
+             * Section 11 used to describe "two buttons, two destinations" - one
+             * for free, one for a trial. There is one destination now, because
+             * there is no free tier: every plan is bought, and every plan can be
+             * trialled with a card up front.
+             *
+             * Kept alongside the per-price links above as the interval-less
+             * default, for a card that links to a plan without choosing a
+             * billing period first.
              */
-            'signup_url' => $plan->is_free
-                ? route('register')
-                : route('register', ['plan' => $plan->code]),
+            'signup_url' => route('register', ['plan' => $plan->code]),
         ];
     }
 }

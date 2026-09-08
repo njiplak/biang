@@ -16,6 +16,10 @@ beforeEach(function () {
 
     $this->owner = User::factory()->create();
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
+
+    // Inviting is a write, and there is no free tier: a workspace nobody is
+    // paying for is read-only, so these tests have to buy a plan first.
+    subscribeWorkspace($this->workspace);
 });
 
 // Until now an invitation was created, a seat was reserved, and the link went
@@ -51,7 +55,9 @@ it('emails a fresh link when resent', function () {
 it('sends nothing when the seat limit blocks the invite', function () {
     Notification::fake();
 
-    // free plan seeds 2 seats; the owner holds one
+    // two seats on the plan they pay for; the owner already holds one
+    capSeats($this->workspace, 2);
+
     $this->actingAs($this->owner)->post(route('workspace.invitation.store', $this->workspace), [
         'email' => 'a@example.com', 'role' => 'member',
     ]);

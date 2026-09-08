@@ -26,8 +26,8 @@ beforeEach(function () {
     $this->usage = app(UsageContract::class);
 
     $this->seats = Feature::factory()->create(['key' => 'seats']);
-    $this->freePlan = Plan::factory()->free()->create();
-    $this->freePlan->features()->attach($this->seats, ['value' => 2]);
+    $this->floorPlan = Plan::factory()->floor()->create();
+    $this->floorPlan->features()->attach($this->seats, ['value' => 2]);
 
     $this->admin = AdminUser::factory()->create();
 });
@@ -170,7 +170,8 @@ it('puts the workspace back on its plan when the override is revoked', function 
  * after some later job notices.
  */
 it('lifts an existing hard block the moment the limit is raised', function () {
-    $workspace = Workspace::factory()->create();
+    // Paying: the block being lifted has to leave a workspace that can write.
+    $workspace = Workspace::factory()->paying()->create();
 
     $this->entitlements->rebuild($workspace);
     $this->usage->setGauge($workspace, 'seats', 8);

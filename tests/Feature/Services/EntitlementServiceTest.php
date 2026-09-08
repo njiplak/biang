@@ -16,8 +16,8 @@ use App\Support\CurrentWorkspace;
 beforeEach(function () {
     $this->service = app(EntitlementContract::class);
     $this->seats = Feature::factory()->create(['key' => 'seats']);
-    $this->freePlan = Plan::factory()->free()->create();
-    $this->freePlan->features()->attach($this->seats, ['value' => 2]);
+    $this->floorPlan = Plan::factory()->floor()->create();
+    $this->floorPlan->features()->attach($this->seats, ['value' => 2]);
 });
 
 it('resolves the free plan for a workspace with no subscription', function () {

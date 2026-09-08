@@ -9,6 +9,7 @@ use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
 use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
+use App\Enums\CancellationFeedback;
 use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\AddonNotAvailable;
 use App\Exceptions\Domain\DowngradeBlocked;
@@ -164,7 +165,7 @@ class SubscriptionService implements SubscriptionContract
      *
      * Order matters, and it is deliberate:
      *
-     *   assertFits  →  tell Dodo (money)  →  move our rows (access)
+     *   assertPlanFits  →  tell Dodo (money)  →  move our rows (access)
      *
      * The seat check is ours and must refuse before anybody is charged.
      * Proration is Dodo's (section 8 makes them merchant of record), and if
@@ -181,7 +182,7 @@ class SubscriptionService implements SubscriptionContract
 
         // Section 7: "The downgrade is blocked until they remove three people."
         // Before the money, so a refusal costs nothing to unwind.
-        $this->assertFits($workspace, $price);
+        $this->assertPlanFits($workspace, $price);
 
         /*
          * Deliberately OUTSIDE the transaction below. A call to somebody else's
@@ -258,8 +259,11 @@ class SubscriptionService implements SubscriptionContract
      * customer keeps the plan they are paying for and can try again. That is
      * the recoverable failure; the other order is not.
      */
-    public function cancel(Workspace $workspace): void
-    {
+    public function cancel(
+        Workspace $workspace,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void {
         $subscription = $this->liveSubscription($workspace);
 
         /*
@@ -269,22 +273,27 @@ class SubscriptionService implements SubscriptionContract
          * later would mean charging them again for a plan they no longer have.
          */
         if ($subscription?->isHeldWithProvider()) {
-            $this->gateway->cancelSubscription($subscription);
+            $this->gateway->cancelSubscription($subscription, false, $feedback, $comment);
         }
 
-        DB::transaction(function () use ($workspace, $subscription) {
+        DB::transaction(function () use ($workspace, $subscription, $feedback, $comment) {
             if ($subscription !== null) {
                 $subscription->update([
                     'status' => SubscriptionStatus::Canceled,
                     'canceled_at' => now(),
+                    // Kept on OUR side as well as theirs. Section 15's churn
+                    // split is our metric, and asking Dodo for it every time
+                    // would put a rate-limited API call behind a dashboard.
+                    'cancellation_feedback' => $feedback,
+                    'cancellation_comment' => $comment,
                     'ended_at' => now(),
                 ]);
             }
 
-            // Section 6: the workspace drops to the free tier and the data
-            // stays. If that leaves them over the free limit, section 7's hard
-            // block applies - we do not delete anyone's data to make it fit.
-            $this->settle($workspace, BillingStatus::Free);
+            // The workspace goes read-only and the data stays. Nobody is
+            // removed to make it fit a smaller plan - there is no smaller plan
+            // to fit, only the floor, and writing is what stops.
+            $this->settle($workspace, BillingStatus::Unpaid);
         });
     }
 
@@ -476,23 +485,32 @@ class SubscriptionService implements SubscriptionContract
     }
 
     /**
-     * Section 7: the downgrade is blocked until they remove enough people, and
-     * we say exactly how many. Checked before the plan changes so a refusal
-     * leaves the old plan and its entitlements untouched.
+     * Section 7: the move is blocked until they remove enough people, and we
+     * say exactly how many. Checked before anything moves - and, for a
+     * purchase, before anyone is charged.
+     *
+     * Null is unlimited and always fits.
      */
-    private function assertFits(Workspace $workspace, PlanPrice $price): void
+    public function seatOverageFor(Workspace $workspace, PlanPrice $price): int
     {
         $limit = $price->plan()->with('features')->first()?->limitFor(Features::SEATS);
 
         if ($limit === null) {
+            return 0;
+        }
+
+        return max(0, $workspace->seatsUsed() - $limit);
+    }
+
+    public function assertPlanFits(Workspace $workspace, PlanPrice $price): void
+    {
+        if ($this->seatOverageFor($workspace, $price) === 0) {
             return;
         }
 
-        $used = $workspace->seatsUsed();
+        $limit = (int) $price->plan()->with('features')->first()?->limitFor(Features::SEATS);
 
-        if ($used > $limit) {
-            throw new DowngradeBlocked(Features::SEATS, $used, $limit);
-        }
+        throw new DowngradeBlocked(Features::SEATS, $workspace->seatsUsed(), $limit);
     }
 
     private function assertNotSubscribed(Workspace $workspace): void

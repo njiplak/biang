@@ -143,16 +143,21 @@ it('rebuilds every workspace on a plan when its limits change', function () {
 });
 
 /*
- * The awkward one: a free-tier workspace has NO subscription at all -
- * EntitlementService falls back to the free plan - so it cannot be found by
+ * The awkward one: a workspace with no subscription has none to join against -
+ * EntitlementService falls back to the FLOOR plan - so it cannot be found by
  * joining subscriptions and has to be swept separately.
+ *
+ * The seeded floor grants unlimited, so this gives it a number first. That is
+ * the only way to see the sweep happen at all.
  */
-it('rebuilds free tier workspaces when the free plan changes', function () {
+it('rebuilds workspaces resting on the floor when the floor plan changes', function () {
+    $seats = $this->free->features()->where('key', 'seats')->firstOrFail();
+    $this->catalog->syncFeatures($this->free, [$seats->id => 2]);
+
     $workspace = app(WorkspaceContract::class)->create(User::factory()->create(), 'Acme');
 
     expect($this->entitlements->limitFor($workspace, 'seats'))->toBe(2);
 
-    $seats = $this->free->features()->where('key', 'seats')->firstOrFail();
     $this->catalog->syncFeatures($this->free, [$seats->id => 5]);
 
     expect($this->entitlements->limitFor($workspace, 'seats'))->toBe(5);
@@ -182,13 +187,17 @@ it('records an unlimited limit as null', function () {
 
 // A raised limit has to release a blocked customer in the same breath.
 it('lifts the hard block when a plan limit is raised', function () {
+    // The floor grants unlimited, so it has to be given a ceiling before a
+    // workspace resting on it can be over one.
+    $seats = $this->free->features()->where('key', 'seats')->firstOrFail();
+    $this->catalog->syncFeatures($this->free, [$seats->id => 2]);
+
     $workspace = app(WorkspaceContract::class)->create(User::factory()->create(), 'Acme');
 
     app(UsageContract::class)->setGauge($workspace, 'seats', 4);
     app(UsageContract::class)->evaluate($workspace);
     expect($workspace->fresh()->isOverLimit())->toBeTrue();
 
-    $seats = $this->free->features()->where('key', 'seats')->firstOrFail();
     $this->catalog->syncFeatures($this->free, [$seats->id => 10]);
     app(UsageContract::class)->evaluate($workspace->fresh());
 

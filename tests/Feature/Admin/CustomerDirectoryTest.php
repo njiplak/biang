@@ -53,7 +53,8 @@ it('finds a customer by workspace name', function () {
         ->getJson(route('admin.customer.fetch', ['filter' => ['search' => 'Acme']]))
         ->assertOk()
         ->assertJsonPath('items.0.name', 'Acme Inc')
-        ->assertJsonPath('items.0.state', 'free');
+        // No free tier: a workspace nobody is paying for is read-only.
+        ->assertJsonPath('items.0.state', 'expired');
 });
 
 // Section 10 says "by email OR workspace name", and support is usually handed
@@ -298,6 +299,11 @@ it('explains that a workspace with no trial cannot have one extended', function 
 
 it('overrides a limit for one customer and lifts the block', function () {
     $seats = Feature::where('key', 'seats')->firstOrFail();
+
+    // Over limit is only reachable while somebody is paying - the floor grants
+    // unlimited, because an expired workspace cannot write whatever it says.
+    subscribeWorkspace($this->workspace);
+    capSeats($this->workspace, 5);
 
     app(UsageContract::class)->setGauge($this->workspace, 'seats', 9);
     app(UsageContract::class)->evaluate($this->workspace);

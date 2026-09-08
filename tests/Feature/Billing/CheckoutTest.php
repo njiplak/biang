@@ -56,7 +56,7 @@ it('changes nothing about our own state', function () {
     $this->actingAs($this->owner)
         ->post(route('billing.checkout'), ['plan_price_id' => $this->price->id]);
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free)
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($this->workspace->subscription()->withoutWorkspaceScope()->first())->toBeNull();
 });
 
@@ -92,7 +92,7 @@ it('explains itself when the provider is not configured', function () {
         ->assertRedirect()
         ->assertSessionHasErrors('errors');
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 // A price nobody has published to Dodo has no product to sell.

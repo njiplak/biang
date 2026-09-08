@@ -5,7 +5,7 @@ namespace App\Exceptions\Domain;
 use App\Models\Workspace;
 
 /**
- * Section 12: "A customer on the free tier does not exist in Dodo at all."
+ * Section 12: a workspace that has never bought does not exist in Dodo at all.
  *
  * There is no payment account to attach a paid add-on to, so the answer for a
  * free workspace that hits a limit is an upgrade, not an add-on. Section 7's

@@ -37,7 +37,7 @@ class TrialEndingNotification extends Notification implements ShouldQueue
             ->greeting('Your trial is nearly over')
             // Stated plainly and up front: this is the whole point of the email.
             ->line("The trial for {$this->workspace->name} ends {$when}, and the card on file will be charged automatically.")
-            ->line('If you would rather not continue, cancel before then and the workspace simply drops to the free tier — nothing is deleted.')
+            ->line('If you would rather not continue, cancel before then and you will not be charged. The workspace becomes read-only — nothing is deleted.')
             ->action('Review your plan', url('/billing'))
             ->line('You will keep access to everything you have created either way.');
     }

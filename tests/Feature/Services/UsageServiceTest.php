@@ -14,11 +14,16 @@ beforeEach(function () {
     $this->seats = Feature::factory()->create(['key' => 'seats']);
     $this->calls = Feature::factory()->metered()->create(['key' => 'api_calls']);
 
-    $free = Plan::factory()->free()->create();
+    $free = Plan::factory()->floor()->create();
     $free->features()->attach($this->seats, ['value' => 3]);
     $free->features()->attach($this->calls, ['value' => 100]);
 
-    $this->workspace = Workspace::factory()->create();
+    /*
+     * Paying, because there is no free tier: an unpaid workspace is read-only
+     * whatever its limits say, and these tests are about the limit machinery,
+     * not about being expired.
+     */
+    $this->workspace = Workspace::factory()->paying()->create();
     $this->entitlements->rebuild($this->workspace);
 });
 

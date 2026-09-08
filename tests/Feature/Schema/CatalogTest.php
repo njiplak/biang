@@ -60,9 +60,9 @@ it('allows the same interval in a different currency', function () {
 // Cancelling drops a workspace to the free tier (section 6), so "which free
 // plan" must never be ambiguous.
 it('permits only one free plan', function () {
-    Plan::factory()->free()->create();
+    Plan::factory()->floor()->create();
 
-    expect(fn () => Plan::factory()->free()->create())->toThrow(QueryException::class);
+    expect(fn () => Plan::factory()->floor()->create())->toThrow(QueryException::class);
 });
 
 it('excludes archived plans from the active scope', function () {

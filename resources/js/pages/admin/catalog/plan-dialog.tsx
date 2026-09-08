@@ -56,8 +56,15 @@ export function PlanDialog({ plan }: { plan?: CatalogPlan }) {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant={editing ? 'outline' : 'default'} size={editing ? 'sm' : 'default'}>
-                    {editing ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                <Button
+                    variant={editing ? 'outline' : 'default'}
+                    size={editing ? 'sm' : 'default'}
+                >
+                    {editing ? (
+                        <Pencil className="size-4" />
+                    ) : (
+                        <Plus className="size-4" />
+                    )}
                     {editing ? 'Edit' : 'New plan'}
                 </Button>
             </DialogTrigger>
@@ -96,7 +103,9 @@ export function PlanDialog({ plan }: { plan?: CatalogPlan }) {
                         <Input
                             id="plan-name"
                             value={form.data.name}
-                            onChange={(e) => form.setData('name', e.target.value)}
+                            onChange={(e) =>
+                                form.setData('name', e.target.value)
+                            }
                         />
                         <InputError message={form.errors.name} />
                     </div>

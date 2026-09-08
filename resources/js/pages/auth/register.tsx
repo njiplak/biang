@@ -14,12 +14,28 @@ type FormData = {
     password_confirmation: string;
 };
 
+type ChosenPlan = {
+    code: string;
+    name: string;
+    interval: string;
+    currency: string;
+    amount_minor: number;
+    trial_days: number;
+};
+
 type Props = {
     invitedEmail?: string | null;
     invitedTo?: string | null;
+    // Section 11: carried from the marketing site's "Start trial" button.
+    plan?: ChosenPlan | null;
 };
 
-export default function Register({ invitedEmail, invitedTo }: Props) {
+const money = (minor: number, currency: string) =>
+    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(
+        minor / 100,
+    );
+
+export default function Register({ invitedEmail, invitedTo, plan }: Props) {
     const { data, setData, post, processing, errors, reset } =
         useForm<FormData>({
             name: '',
@@ -43,10 +59,24 @@ export default function Register({ invitedEmail, invitedTo }: Props) {
             description={
                 invitedTo
                     ? 'Create your account to accept the invitation'
-                    : 'No card required to start'
+                    : plan
+                      ? `Start your ${plan.trial_days}-day ${plan.name} trial`
+                      : 'No card required to start'
             }
         >
             <Head title="Sign up" />
+
+            {/* The choice has to survive to the card form, and the customer
+                has to be able to see that it did. */}
+            {plan && (
+                <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
+                    <span className="font-medium">{plan.name}</span>
+                    <span className="text-muted-foreground">
+                        {money(plan.amount_minor, plan.currency)}/
+                        {plan.interval} after {plan.trial_days} days
+                    </span>
+                </div>
+            )}
 
             {invitedEmail && (
                 <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">

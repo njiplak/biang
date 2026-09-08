@@ -15,8 +15,9 @@ type Props = {
 };
 
 export default function PermissionForm({ permission }: Props) {
-    const { data, setData, post, put, errors, processing } =
-        useForm(permission ?? { name: '' });
+    const { data, setData, post, put, errors, processing } = useForm(
+        permission ?? { name: '' },
+    );
 
     const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -41,7 +42,8 @@ export default function PermissionForm({ permission }: Props) {
                         placeholder="e.g. campaign.create"
                     />
                     <p className="text-xs text-muted-foreground">
-                        Use module.action format (e.g., campaign.create, setting.view)
+                        Use module.action format (e.g., campaign.create,
+                        setting.view)
                     </p>
                     <InputError message={errors?.name} />
                 </div>
@@ -65,4 +67,6 @@ export default function PermissionForm({ permission }: Props) {
     );
 }
 
-PermissionForm.layout = (page: React.ReactNode) => <AdminLayout>{page}</AdminLayout>;
+PermissionForm.layout = (page: React.ReactNode) => (
+    <AdminLayout>{page}</AdminLayout>
+);

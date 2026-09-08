@@ -66,7 +66,7 @@ it('stops the charging when a customer cancels', function () {
     $subscription = Subscription::withoutWorkspaceScope()
         ->where('workspace_id', $fresh->id)->firstOrFail();
 
-    expect($fresh->billing_status)->toBe(BillingStatus::Free)
+    expect($fresh->billing_status)->toBe(BillingStatus::Unpaid)
         ->and($subscription->status)->toBe(SubscriptionStatus::Canceled)
         ->and($subscription->ended_at)->not->toBeNull()
         ->and($fresh->canRead())->toBeTrue();
@@ -119,7 +119,7 @@ it('cancels a comped plan without calling the provider', function () {
     subscriptions()->cancel($this->workspace->fresh());
 
     expect($gateway->cancellations)->toBeEmpty()
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 // A free workspace has no subscription at all; cancelling is a no-op, not a crash.
@@ -129,7 +129,7 @@ it('survives cancelling a workspace that never paid', function () {
     subscriptions()->cancel($this->workspace);
 
     expect($gateway->cancellations)->toBeEmpty()
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 });
 
 /*
@@ -160,7 +160,7 @@ it('does not call back out when the cancellation came from Dodo', function () {
 
     // Our state moved; nothing went back to them.
     expect($gateway->cancellations)->toBeEmpty()
-        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Free);
+        ->and($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
 
     $subscription = Subscription::withoutWorkspaceScope()
         ->where('workspace_id', $this->workspace->id)->firstOrFail();

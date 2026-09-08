@@ -1,4 +1,4 @@
-import type { Model } from "./model";
+import type { Model } from './model';
 
 export type Setting = Model & {
     key: string;

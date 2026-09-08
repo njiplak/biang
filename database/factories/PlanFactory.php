@@ -22,9 +22,20 @@ class PlanFactory extends Factory
         ];
     }
 
-    public function free(): static
+    /**
+     * The floor plan: where a workspace rests when no subscription is live.
+     *
+     * Never public, because there is no free tier to sell - `is_free` is now a
+     * historical name for the column that guarantees exactly one of these.
+     */
+    public function floor(): static
     {
-        return $this->state(fn () => ['is_free' => true, 'code' => 'free', 'name' => 'Free']);
+        return $this->state(fn () => [
+            'is_free' => true,
+            'is_public' => false,
+            'code' => 'free',
+            'name' => 'Read-only',
+        ]);
     }
 
     public function archived(): static

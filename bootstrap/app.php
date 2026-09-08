@@ -72,6 +72,18 @@ return Application::configure(basePath: dirname(__DIR__))
             ->monitorName('dunning-reminders')
             ->graceTimeInMinutes(90);
 
+        /*
+         * The safety net under the webhook. Hourly because the thing it catches
+         * is a notification that never arrived, and until it runs our records
+         * are granting access on the strength of a payment we have not actually
+         * confirmed - which with cancellation available on Dodo's own page
+         * (section 8) is access somebody may have already stopped paying for.
+         */
+        $schedule->command('billing:reconcile-subscriptions')
+            ->hourly()
+            ->monitorName('reconcile-subscriptions')
+            ->graceTimeInMinutes(90);
+
         $schedule->command('billing:expire-grace')
             ->dailyAt('02:00')
             ->monitorName('expire-grace');

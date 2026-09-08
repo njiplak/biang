@@ -55,6 +55,10 @@ it('lets a page keep its own workspace prop alongside the shared context', funct
 });
 
 it('still carries the context on a workspace that is over its limit', function () {
+    // Over limit is only reachable while somebody is paying: an expired
+    // workspace cannot write at all, so that state wins instead.
+    subscribeWorkspace($this->workspace);
+    capSeats($this->workspace, 2);
     App\Models\WorkspaceMember::factory()->for($this->workspace)->count(3)->create();
     app(App\Contract\Workspace\MembershipContract::class)->syncSeats($this->workspace);
 

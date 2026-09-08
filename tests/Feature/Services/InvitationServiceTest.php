@@ -15,7 +15,7 @@ use App\Support\Features;
 beforeEach(function () {
     $this->service = app(InvitationContract::class);
     Feature::factory()->create(['key' => Features::SEATS]);
-    $plan = Plan::factory()->free()->create();
+    $plan = Plan::factory()->floor()->create();
     $plan->features()->attach(Feature::where('key', Features::SEATS)->first(), ['value' => 3]);
 
     $this->owner = User::factory()->create();

@@ -4,11 +4,13 @@ namespace Tests\Fakes;
 
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Enums\BillingInterval;
+use App\Enums\CancellationFeedback;
 use App\Exceptions\Domain\CancellationFailed;
 use App\Exceptions\Domain\CheckoutUnavailable;
 use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
+use App\Exceptions\Domain\ProviderLookupFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
@@ -45,10 +47,36 @@ class FakePaymentGateway implements PaymentGatewayContract
     public array $planChanges = [];
 
     /** @var list<array<string, mixed>> */
+    public array $previews = [];
+
+    /** What previewPlanChange answers. Overwrite it to price a test. */
+    public array $preview = [
+        'amount_minor' => 1200,
+        'currency' => 'USD',
+        'tax_minor' => 0,
+        'credit_minor' => 2500,
+    ];
+
+    /** @var list<array<string, mixed>> */
     public array $usage = [];
 
     /** @var list<array<string, mixed>> */
     public array $cancellations = [];
+
+    /**
+     * What Dodo would say about a subscription, keyed by their id. Shaped like
+     * the `data` block of their webhook, because that is what the real gateway
+     * translates their SDK objects into.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    public array $remoteSubscriptions = [];
+
+    /** @var array<string, array<string, mixed>> keyed by payment id */
+    public array $remotePayments = [];
+
+    /** Every read, in order, so a test can assert nothing was asked twice. */
+    public array $lookups = [];
 
     public int $nextProductId = 1;
 
@@ -179,8 +207,12 @@ class FakePaymentGateway implements PaymentGatewayContract
         ];
     }
 
-    public function cancelSubscription(Subscription $subscription, bool $atPeriodEnd = false): void
-    {
+    public function cancelSubscription(
+        Subscription $subscription,
+        bool $atPeriodEnd = false,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void {
         if ($this->broken) {
             throw new CancellationFailed('the payment provider did not respond');
         }
@@ -192,7 +224,39 @@ class FakePaymentGateway implements PaymentGatewayContract
         $this->cancellations[] = [
             'subscription' => $subscription->dodo_subscription_id,
             'at_period_end' => $atPeriodEnd,
+            'feedback' => $feedback?->value,
+            'comment' => $comment,
         ];
+    }
+
+    /**
+     * @return array{amount_minor: int, currency: string, tax_minor: int|null, credit_minor: int}
+     */
+    public function previewPlanChange(
+        Subscription $subscription,
+        PlanPrice $price,
+        array $addons = [],
+    ): array {
+        if ($this->broken) {
+            throw new PlanChangeUnavailable('the payment provider could not price this change');
+        }
+
+        // The real gateway's preconditions, repeated: a fake that prices what
+        // Dodo would refuse hides the bug instead of catching it.
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
+        }
+
+        if (blank($price->dodo_product_id)) {
+            throw new PlanChangeUnavailable('the new plan is not published to the payment provider yet');
+        }
+
+        $this->previews[] = [
+            'subscription' => $subscription->dodo_subscription_id,
+            'product_id' => $price->dodo_product_id,
+        ];
+
+        return $this->preview;
     }
 
     public function reportUsage(
@@ -222,5 +286,56 @@ class FakePaymentGateway implements PaymentGatewayContract
         }
 
         $this->archived[] = $productId;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function retrieveSubscription(string $providerSubscriptionId): array
+    {
+        $this->lookups[] = ['subscription', $providerSubscriptionId];
+
+        if ($this->broken) {
+            throw new ProviderLookupFailed('the payment provider did not respond');
+        }
+
+        return $this->remoteSubscriptions[$providerSubscriptionId]
+            ?? throw new ProviderLookupFailed('no such subscription');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function listSucceededPaymentIds(string $providerSubscriptionId): array
+    {
+        $this->lookups[] = ['payments', $providerSubscriptionId];
+
+        if ($this->broken) {
+            throw new ProviderLookupFailed('the payment provider did not respond');
+        }
+
+        return collect($this->remotePayments)
+            // The real call filters at their end, and a fake that returned
+            // failed attempts too would hide a bug rather than catch it: a
+            // failed attempt counted as an invoice ends a trial nobody paid for.
+            ->filter(fn (array $payment) => ($payment['subscription_id'] ?? null) === $providerSubscriptionId
+                && ($payment['status'] ?? null) === 'succeeded')
+            ->keys()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function retrievePayment(string $paymentId): array
+    {
+        $this->lookups[] = ['payment', $paymentId];
+
+        if ($this->broken) {
+            throw new ProviderLookupFailed('the payment provider did not respond');
+        }
+
+        return $this->remotePayments[$paymentId]
+            ?? throw new ProviderLookupFailed('no such payment');
     }
 }

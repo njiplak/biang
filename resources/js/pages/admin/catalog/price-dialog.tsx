@@ -72,7 +72,11 @@ export function PriceDialog({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className={addon ? 'mt-3' : undefined}>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className={addon ? 'mt-3' : undefined}
+                >
                     <Coins className="size-4" />
                     {plan ? 'Add price' : 'Add price'}
                 </Button>

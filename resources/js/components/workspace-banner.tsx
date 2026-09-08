@@ -14,6 +14,28 @@ export default function WorkspaceBanner({
 }) {
     if (!workspace) return null;
 
+    /*
+     * No free tier. A workspace nobody is paying for keeps everything it has,
+     * keeps it readable, and cannot be changed - so the banner has to say all
+     * three things: what stopped, what is kept, and the one way back.
+     *
+     * Above over-limit deliberately, matching Workspace::displayState(): naming
+     * a seat limit here would point at a problem this customer cannot fix and
+     * hide the one they can.
+     */
+    if (workspace.state === 'expired') {
+        return (
+            <Banner tone="warn" icon={<Lock className="size-4 shrink-0" />}>
+                This workspace is read-only because there is no active
+                subscription. Everything here is kept and stays readable —
+                choose a plan to start making changes again.{' '}
+                <Link href="/billing" className="underline underline-offset-4">
+                    Choose a plan
+                </Link>
+            </Banner>
+        );
+    }
+
     // Section 7: over limit blocks writing and must name the limits.
     if (workspace.state === 'over_limit') {
         const features = workspace.over_limit_features?.join(', ') ?? 'a limit';
@@ -56,12 +78,8 @@ export default function WorkspaceBanner({
     }
 
     // Section 4: the trial auto-charges, so the date is never a surprise.
-    if (workspace.state === 'trialing' && workspace.trial_ends_at) {
-        const endsAt = new Date(workspace.trial_ends_at);
-        const days = Math.max(
-            0,
-            Math.ceil((endsAt.getTime() - Date.now()) / 86_400_000),
-        );
+    if (workspace.state === 'trialing' && workspace.trial_days_left !== null) {
+        const days = workspace.trial_days_left;
 
         return (
             <Banner tone="info" icon={<Clock className="size-4 shrink-0" />}>

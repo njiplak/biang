@@ -105,7 +105,9 @@ export function StaffDialog({
                         <Input
                             id="staff-name"
                             value={form.data.name}
-                            onChange={(e) => form.setData('name', e.target.value)}
+                            onChange={(e) =>
+                                form.setData('name', e.target.value)
+                            }
                         />
                         <InputError message={form.errors.name} />
                     </div>
@@ -146,14 +148,19 @@ export function StaffDialog({
                         <Label htmlFor="staff-role">Role</Label>
                         <Select
                             value={form.data.role}
-                            onValueChange={(value) => form.setData('role', value)}
+                            onValueChange={(value) =>
+                                form.setData('role', value)
+                            }
                         >
                             <SelectTrigger id="staff-role">
                                 <SelectValue placeholder="No role" />
                             </SelectTrigger>
                             <SelectContent>
                                 {roles.map((role) => (
-                                    <SelectItem key={role.name} value={role.name}>
+                                    <SelectItem
+                                        key={role.name}
+                                        value={role.name}
+                                    >
                                         {role.name}
                                     </SelectItem>
                                 ))}

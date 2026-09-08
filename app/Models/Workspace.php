@@ -87,6 +87,16 @@ class Workspace extends Model
             return WorkspaceDisplayState::Suspended;
         }
 
+        /*
+         * Above the limit check, and that order matters as much as the one
+         * below it. An expired workspace cannot write AT ALL, so telling the
+         * customer they are over a seat limit would name a problem that is not
+         * theirs to fix and hide the one that is - nobody is paying.
+         */
+        if (in_array($this->billing_status, [BillingStatus::Unpaid, BillingStatus::Canceled], true)) {
+            return WorkspaceDisplayState::Expired;
+        }
+
         if ($this->isOverLimit()) {
             return WorkspaceDisplayState::OverLimit;
         }
@@ -95,7 +105,7 @@ class Workspace extends Model
             BillingStatus::Trialing => WorkspaceDisplayState::Trialing,
             BillingStatus::Active => WorkspaceDisplayState::Active,
             BillingStatus::PastDue => WorkspaceDisplayState::PastDue,
-            BillingStatus::Free, BillingStatus::Canceled => WorkspaceDisplayState::Free,
+            BillingStatus::Unpaid, BillingStatus::Canceled => WorkspaceDisplayState::Expired,
         };
     }
 
@@ -114,12 +124,21 @@ class Workspace extends Model
         return $this->displayState() !== WorkspaceDisplayState::Deleted;
     }
 
+    /**
+     * There is no free tier, so writing is something a live plan buys.
+     *
+     * Expired is deliberately absent: a workspace nobody is paying for keeps
+     * everything it has and keeps it readable forever, but it cannot be added
+     * to. Past due is deliberately present - section 9 keeps full access while
+     * a card is being fixed, because a card problem is not misuse.
+     */
     public function canWrite(): bool
     {
-        return $this->displayState() === WorkspaceDisplayState::Free
-            || $this->displayState() === WorkspaceDisplayState::Trialing
-            || $this->displayState() === WorkspaceDisplayState::Active
-            || $this->displayState() === WorkspaceDisplayState::PastDue;
+        return in_array($this->displayState(), [
+            WorkspaceDisplayState::Trialing,
+            WorkspaceDisplayState::Active,
+            WorkspaceDisplayState::PastDue,
+        ], true);
     }
 
     /** Section 6: a suspended workspace can still export everything. */

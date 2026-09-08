@@ -14,6 +14,10 @@ beforeEach(function () {
     $this->seed(PlanSeeder::class);
     $this->owner = User::factory()->create();
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
+
+    // Renaming is a write, and there is no free tier - an unpaid workspace is
+    // read-only, so `can.rename` would be false for its own owner.
+    subscribeWorkspace($this->workspace);
 });
 
 it('shows settings with what this person may actually do', function () {

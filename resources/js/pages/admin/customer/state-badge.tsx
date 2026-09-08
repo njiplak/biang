@@ -7,7 +7,8 @@ import type { WorkspaceState } from '@/types/customer';
  * warnings - so a directory row says what is wrong without being read.
  */
 const TONE: Record<WorkspaceState, string> = {
-    free: 'bg-neutral-100 text-neutral-700 ring-neutral-600/20 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-400/20',
+    expired:
+        'bg-neutral-100 text-neutral-700 ring-neutral-600/20 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-400/20',
     trialing:
         'bg-blue-50 text-blue-700 ring-blue-700/20 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-400/20',
     active: 'bg-green-50 text-green-700 ring-green-700/20 dark:bg-green-950 dark:text-green-300 dark:ring-green-400/20',

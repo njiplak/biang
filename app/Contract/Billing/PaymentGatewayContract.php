@@ -3,14 +3,19 @@
 namespace App\Contract\Billing;
 
 use App\Enums\BillingInterval;
+use App\Enums\CancellationFeedback;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\Workspace;
 
 /**
- * The only place the app talks OUT to Dodo. Everything inbound arrives as a
- * webhook and goes through ReconcilerContract instead.
+ * The only place the app talks OUT to Dodo.
+ *
+ * Inbound state changes go through ReconcilerContract. They reach it two ways:
+ * unsolicited, as a webhook, or because we asked - the three read methods at the
+ * bottom of this interface. Both end at the same reconciler, because a webhook
+ * that never arrives is indistinguishable from nothing having happened.
  *
  * Behind a contract for a specific reason: section 14 phase 3 requires the
  * product to be sellable by hand with no payment provider wired up at all, and
@@ -146,9 +151,41 @@ interface PaymentGatewayContract
      * the next renewal. The immediate form ends it now, which is what our own
      * cancel does to access - see SubscriptionService::cancel.
      *
+     * $feedback and $comment are the customer's own answer to "why", passed
+     * through so their record and ours agree. Both optional and always
+     * optional: the exit is never blocked, and that includes not making
+     * somebody answer a question in order to leave.
+     *
      * @throws \App\Exceptions\Domain\CancellationFailed
      */
-    public function cancelSubscription(Subscription $subscription, bool $atPeriodEnd = false): void;
+    public function cancelSubscription(
+        Subscription $subscription,
+        bool $atPeriodEnd = false,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void;
+
+    /**
+     * What a plan change would cost, before it is made.
+     *
+     * Section 4 prices a switch as "the price difference is prorated", and
+     * Dodo does that arithmetic - so they are the only ones who can answer
+     * what it comes to. We charged it without ever showing it, which is the
+     * most reliable way to turn an upgrade into a "why was I charged this?"
+     * ticket.
+     *
+     * Returns minor units, like every other amount in this codebase.
+     *
+     * @param  list<array{addon_id: string, quantity: int}>  $addons
+     * @return array{amount_minor: int, currency: string, tax_minor: int|null, credit_minor: int}
+     *
+     * @throws \App\Exceptions\Domain\PlanChangeUnavailable
+     */
+    public function previewPlanChange(
+        Subscription $subscription,
+        PlanPrice $price,
+        array $addons = [],
+    ): array;
 
     public function reportUsage(
         string $customerId,
@@ -157,4 +194,48 @@ interface PaymentGatewayContract
         array $metadata,
         ?\DateTimeInterface $occurredAt = null,
     ): void;
+
+    /**
+     * Everything Dodo currently knows about one subscription, shaped like the
+     * `data` block of their own webhook.
+     *
+     * Shaped that way on purpose. The reconciler already reads that shape and
+     * has the out-of-order and idempotency rules built around it, and a second
+     * shape would mean a second set of those rules to keep in step. Translating
+     * here is right because this class is already the only thing that knows
+     * Dodo's vocabulary.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws \App\Exceptions\Domain\ProviderLookupFailed
+     */
+    public function retrieveSubscription(string $providerSubscriptionId): array;
+
+    /**
+     * The ids of every payment Dodo has SETTLED against one subscription.
+     *
+     * Ids only, because the caller already holds the ones it has recorded and
+     * the point is to find the ones it has not. Fetching the detail of a
+     * payment we already have an invoice summary for would be a request per
+     * renewal, forever.
+     *
+     * @return list<string>
+     *
+     * @throws \App\Exceptions\Domain\ProviderLookupFailed
+     */
+    public function listSucceededPaymentIds(string $providerSubscriptionId): array;
+
+    /**
+     * One payment in full, shaped like the `data` block of their
+     * `payment.succeeded` webhook.
+     *
+     * The full record rather than the list entry because this becomes an
+     * invoice summary, and their list omits tax and the settlement amount -
+     * numbers section 8 makes theirs to state and ours only to copy.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws \App\Exceptions\Domain\ProviderLookupFailed
+     */
+    public function retrievePayment(string $paymentId): array;
 }

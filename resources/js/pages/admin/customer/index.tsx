@@ -46,7 +46,8 @@ const columns: ColumnDef<CustomerRow, any>[] = [
         enableColumnFilter: false,
         cell: (ctx) => {
             const { plan, billing_source } = ctx.row.original;
-            if (!plan) return <span className="text-muted-foreground">Free</span>;
+            if (!plan)
+                return <span className="text-muted-foreground">Free</span>;
 
             return (
                 <div className="flex flex-col">

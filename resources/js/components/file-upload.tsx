@@ -116,7 +116,7 @@ export function FileUpload({
                                 <button
                                     type="button"
                                     onClick={() => removeExisting(media.id)}
-                                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+                                    className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80"
                                 >
                                     <X className="size-3" />
                                 </button>
@@ -139,12 +139,12 @@ export function FileUpload({
                                 <button
                                     type="button"
                                     onClick={() => removeNew(index)}
-                                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+                                    className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80"
                                 >
                                     <X className="size-3" />
                                 </button>
                             )}
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1.5 py-0.5">
+                            <div className="absolute right-0 bottom-0 left-0 bg-black/50 px-1.5 py-0.5">
                                 <p className="truncate text-[10px] text-white">
                                     {preview.file.name}
                                 </p>

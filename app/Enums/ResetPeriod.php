@@ -9,7 +9,7 @@ enum ResetPeriod: string
 
     /**
      * Free workspaces have no subscription and therefore no billing period,
-     * so any metered feature reachable on the free tier must use this.
+     * so any metered feature reachable without a subscription must use this.
      */
     case CalendarMonth = 'calendar_month';
 }

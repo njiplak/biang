@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\BillingSource;
+use App\Enums\CancellationFeedback;
 use App\Enums\SubscriptionStatus;
 use App\Models\Concerns\BelongsToWorkspace;
 use DateTimeInterface;
@@ -26,7 +27,8 @@ class Subscription extends Model
         'ulid', 'workspace_id', 'plan_id', 'plan_price_id', 'status',
         'billing_source', 'dodo_subscription_id', 'trial_ends_at',
         'current_period_start', 'current_period_end', 'cancel_at_period_end',
-        'canceled_at', 'ended_at', 'provider_event_at',
+        'canceled_at', 'cancellation_feedback', 'cancellation_comment',
+        'ended_at', 'provider_event_at',
         'granted_by_admin_id', 'grant_reason',
     ];
 
@@ -40,6 +42,7 @@ class Subscription extends Model
             'current_period_end' => 'datetime',
             'cancel_at_period_end' => 'boolean',
             'canceled_at' => 'datetime',
+            'cancellation_feedback' => CancellationFeedback::class,
             'ended_at' => 'datetime',
             'provider_event_at' => 'datetime',
         ];

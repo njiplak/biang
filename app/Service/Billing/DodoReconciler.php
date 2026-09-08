@@ -11,6 +11,7 @@ use App\Enums\DunningResolution;
 use App\Enums\SubscriptionStatus;
 use App\Models\DunningState;
 use App\Models\InvoiceSummary;
+use App\Models\PlanPrice;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\WebhookEvent;
@@ -49,7 +50,7 @@ class DodoReconciler implements ReconcilerContract
 
         DB::transaction(function () use ($event) {
             $data = $event->payload['data'] ?? [];
-            $subscription = $this->locate($data);
+            $subscription = $this->locate($data, $event->event_type);
 
             if ($subscription === null) {
                 // Recorded, not processed. An event for a subscription we have
@@ -233,7 +234,7 @@ class DodoReconciler implements ReconcilerContract
     }
 
     /**
-     * Section 12: cancelling drops to the free tier and keeps the data. Section
+     * Cancelling drops the workspace to read-only and keeps the data. Section
      * 16's known risk is exactly this arriving from Dodo's own page rather than
      * ours, so it has to land in the same state either route.
      */
@@ -249,7 +250,7 @@ class DodoReconciler implements ReconcilerContract
 
         $workspace->update(['grace_ends_at' => null]);
 
-        $this->settle($workspace, BillingStatus::Free);
+        $this->settle($workspace, BillingStatus::Unpaid);
     }
 
     private function expire(Subscription $subscription, Workspace $workspace): void
@@ -263,7 +264,7 @@ class DodoReconciler implements ReconcilerContract
 
         $workspace->update(['grace_ends_at' => null]);
 
-        $this->settle($workspace, BillingStatus::Free);
+        $this->settle($workspace, BillingStatus::Unpaid);
     }
 
     /**
@@ -363,8 +364,14 @@ class DodoReconciler implements ReconcilerContract
      * Linked by the provider's own id first, then by the workspace we stamped
      * into metadata at checkout - which is what catches the very first event
      * for a subscription, before we have ever seen its id.
+     *
+     * Failing that, OPENED. A workspace buying for the first time has no
+     * subscription row at all: section 8 promises checkout changes nothing of
+     * ours until the money moves, so the row cannot exist before this event.
+     * Without this the ordinary first purchase reconciled to "No matching
+     * subscription" and the customer paid for nothing.
      */
-    private function locate(array $data): ?Subscription
+    private function locate(array $data, string $eventType): ?Subscription
     {
         $providerId = $data['subscription_id'] ?? null;
 
@@ -386,18 +393,80 @@ class DodoReconciler implements ReconcilerContract
 
         $workspace = Workspace::query()->where('ulid', $ulid)->first();
 
-        $subscription = $workspace === null ? null : Subscription::withoutWorkspaceScope()
+        if ($workspace === null) {
+            return null;
+        }
+
+        $subscription = Subscription::withoutWorkspaceScope()
             ->where('workspace_id', $workspace->id)
             ->live()
             ->first();
 
+        if ($subscription === null) {
+            return $this->open($workspace, $data, $eventType, $providerId);
+        }
+
         // First sighting: adopt the provider's id so every later event for this
         // subscription finds it directly.
-        if ($subscription !== null && $providerId !== null && $subscription->dodo_subscription_id === null) {
+        if ($providerId !== null && $subscription->dodo_subscription_id === null) {
             $subscription->update(['dodo_subscription_id' => $providerId]);
         }
 
         return $subscription;
+    }
+
+    /**
+     * The first subscription a workspace has ever had, built from what the
+     * checkout metadata carried.
+     *
+     * `plan_price_id` is stamped by DodoPaymentGateway::createCheckout for
+     * exactly this: it is the one thing their payload cannot tell us, because
+     * their product id is a different id space from our price rows.
+     *
+     * Only opened for the events that mean a subscription EXISTS and is live.
+     * A `cancelled` for something we have never heard of is a genuine anomaly,
+     * and inventing a cancelled row to hold it would turn a visible failure
+     * into a silent one.
+     *
+     * Opened as Trialing rather than Active deliberately: nothing has been
+     * charged as far as our records know, and that is what Trialing means here.
+     * `activate()` recomputes it from the payload a few lines later, and
+     * `paymentSucceeded()` promotes it - which only happens from an unpaid
+     * status, so guessing Active would strand a first payment.
+     */
+    private function open(Workspace $workspace, array $data, string $eventType, ?string $providerId): ?Subscription
+    {
+        $opens = in_array($eventType, [
+            'subscription.active',
+            'subscription.renewed',
+            'payment.succeeded',
+        ], true);
+
+        if (! $opens || $providerId === null) {
+            return null;
+        }
+
+        $price = PlanPrice::find($data['metadata']['plan_price_id'] ?? null);
+
+        if ($price === null) {
+            return null;
+        }
+
+        /*
+         * The provider id goes on at creation, not afterwards. The column is
+         * unique, so two deliveries of the same first event race into one row
+         * rather than two - the loser fails, is recorded, and finds the row on
+         * redelivery.
+         */
+        return Subscription::withoutWorkspaceScope()->create([
+            'workspace_id' => $workspace->id,
+            'plan_id' => $price->plan_id,
+            'plan_price_id' => $price->id,
+            'status' => SubscriptionStatus::Trialing,
+            'billing_source' => BillingSource::Dodo,
+            'dodo_subscription_id' => $providerId,
+            'current_period_start' => now(),
+        ]);
     }
 
     private function isStale(Subscription $subscription, WebhookEvent $event): bool

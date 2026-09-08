@@ -17,6 +17,10 @@ beforeEach(function () {
     $this->seed(PlanSeeder::class);
     $this->owner = User::factory()->create();
     $this->workspace = app(WorkspaceContract::class)->create($this->owner, 'Acme Inc');
+
+    // There is no free tier, so a workspace nobody pays for is read-only. These
+    // tests are about the shared props, not about being expired.
+    subscribeWorkspace($this->workspace);
 });
 
 // Section 2: "the app always shows a workspace switcher", so the list has to be
@@ -26,7 +30,7 @@ it('shares the current workspace and the switcher list on every page', function 
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->where('tenancy.current.name', 'Acme Inc')
             ->where('tenancy.current.can_write', true)
-            ->where('tenancy.current.state', 'free')
+            ->where('tenancy.current.state', 'active')
             ->has('tenancy.available', 1));
 });
 
@@ -59,6 +63,7 @@ it('shares no workspace context on the admin console', function () {
 
 // Section 7: the banner has to name the specific limits.
 it('surfaces the over limit state and which features broke', function () {
+    capSeats($this->workspace, 2);
     WorkspaceMember::factory()->for($this->workspace)->count(3)->create();
     app(App\Contract\Workspace\MembershipContract::class)->syncSeats($this->workspace);
 
@@ -71,11 +76,22 @@ it('surfaces the over limit state and which features broke', function () {
 
 // Section 4 and 16: the trial auto-charges, so the app has to say when.
 it('surfaces the trial deadline', function () {
+    // Its own workspace: the shared setup already bought a plan for the other
+    // one, and a workspace holds at most one live subscription.
+    $trialing = app(WorkspaceContract::class)->create($this->owner, 'Trialing Ltd');
     $price = PlanPrice::whereHas('plan', fn ($q) => $q->where('code', 'pro'))->first();
-    app(SubscriptionContract::class)->startTrial($this->workspace, $price, $this->owner);
+    app(SubscriptionContract::class)->startTrial($trialing, $price, $this->owner);
+
+    $this->owner->update(['current_workspace_id' => $trialing->id]);
 
     $this->actingAs($this->owner)->get(route('dashboard'))
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->where('tenancy.current.state', 'trialing')
-            ->whereNot('tenancy.current.trial_ends_at', null));
+            ->whereNot('tenancy.current.trial_ends_at', null)
+            /*
+             * Counted server-side. The banner used to work it out from
+             * Date.now() during render, which is impure - the same component
+             * can render twice and disagree with itself about the date.
+             */
+            ->where('tenancy.current.trial_days_left', 14));
 });

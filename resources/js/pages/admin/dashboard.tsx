@@ -160,7 +160,9 @@ export default function AdminDashboard({ admin: staff, revenue }: Props) {
                 />
                 <JobCard
                     href={admin.announcement.index.url()}
-                    icon={<Megaphone className="size-4 text-muted-foreground" />}
+                    icon={
+                        <Megaphone className="size-4 text-muted-foreground" />
+                    }
                     title="Announcements"
                     body="Tell every customer about maintenance or a new feature."
                 />

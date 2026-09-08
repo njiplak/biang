@@ -51,11 +51,12 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
         ref,
     ) => {
         const [showPassword, setShowPassword] = React.useState(false);
-        const [passwordStrength, setPasswordStrength] = React.useState<PasswordStrength>({
-            score: 0,
-            feedback: [],
-            isValid: false,
-        });
+        const [passwordStrength, setPasswordStrength] =
+            React.useState<PasswordStrength>({
+                score: 0,
+                feedback: [],
+                isValid: false,
+            });
 
         const togglePasswordVisibility = React.useCallback(() => {
             setShowPassword((prev) => !prev);
@@ -64,7 +65,10 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
         const handleKeyDown = React.useCallback(
             (e: React.KeyboardEvent) => {
                 // Allow Enter or Space to toggle password visibility when focused on toggle button
-                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                if (
+                    e.target === e.currentTarget &&
+                    (e.key === 'Enter' || e.key === ' ')
+                ) {
                     e.preventDefault();
                     togglePasswordVisibility();
                 }
@@ -79,7 +83,11 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
                 let score = 0;
 
                 if (!password) {
-                    return { score: 0, feedback: ['Password is required'], isValid: false };
+                    return {
+                        score: 0,
+                        feedback: ['Password is required'],
+                        isValid: false,
+                    };
                 }
 
                 // Check minimum length
@@ -154,7 +162,10 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
         return (
             <div className="space-y-2">
                 {label && (
-                    <label htmlFor={props.id} className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    <label
+                        htmlFor={props.id}
+                        className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
                         {label}
                     </label>
                 )}
@@ -169,7 +180,13 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
                         onChange={onChange}
                         disabled={disabled}
                         placeholder={placeholder}
-                        aria-describedby={showStrengthIndicator ? 'password-strength' : error ? 'password-error' : undefined}
+                        aria-describedby={
+                            showStrengthIndicator
+                                ? 'password-strength'
+                                : error
+                                  ? 'password-error'
+                                  : undefined
+                        }
                         aria-invalid={error ? 'true' : 'false'}
                         {...props}
                     />
@@ -185,11 +202,19 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
                         onKeyDown={handleKeyDown}
                         disabled={disabled}
                         aria-pressed={showPassword}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-label={
+                            showPassword ? 'Hide password' : 'Show password'
+                        }
                         tabIndex={0}
                     >
-                        {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
-                        <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
+                        {showPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="sr-only">
+                            {showPassword ? 'Hide password' : 'Show password'}
+                        </span>
                     </Button>
                 </div>
 
@@ -205,11 +230,20 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
                         <div className="flex items-center space-x-2">
                             <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                                 <div
-                                    className={cn('h-full transition-all duration-300 ease-in-out', getStrengthColor(passwordStrength.score))}
-                                    style={{ width: `${passwordStrength.score}%` }}
+                                    className={cn(
+                                        'h-full transition-all duration-300 ease-in-out',
+                                        getStrengthColor(
+                                            passwordStrength.score,
+                                        ),
+                                    )}
+                                    style={{
+                                        width: `${passwordStrength.score}%`,
+                                    }}
                                 />
                             </div>
-                            <span className="min-w-[50px] text-sm font-medium text-muted-foreground">{getStrengthText(passwordStrength.score)}</span>
+                            <span className="min-w-[50px] text-sm font-medium text-muted-foreground">
+                                {getStrengthText(passwordStrength.score)}
+                            </span>
                         </div>
 
                         {/* Requirements list */}
@@ -220,12 +254,17 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
                                     Password must contain:
                                 </p>
                                 <ul className="space-y-1">
-                                    {passwordStrength.feedback.map((requirement, index) => (
-                                        <li key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                                            <X className="h-3 w-3 text-red-500" />
-                                            {requirement}
-                                        </li>
-                                    ))}
+                                    {passwordStrength.feedback.map(
+                                        (requirement, index) => (
+                                            <li
+                                                key={index}
+                                                className="flex items-center gap-2 text-sm text-muted-foreground"
+                                            >
+                                                <X className="h-3 w-3 text-red-500" />
+                                                {requirement}
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             </div>
                         )}

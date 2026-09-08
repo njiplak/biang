@@ -15,7 +15,7 @@ use Illuminate\Notifications\Notification;
  * by hand from the admin console"), because every customer-started trial now
  * collects a card up front and is converted by the provider instead.
  *
- * Section 6 sets the tone and the facts: dropping to free deletes nothing, so
+ * Section 6 sets the tone and the facts: going read-only deletes nothing, so
  * this is an invitation to pick a plan, not a notice of loss.
  */
 class TrialEndedUnpaidNotification extends Notification implements ShouldQueue
@@ -39,8 +39,8 @@ class TrialEndedUnpaidNotification extends Notification implements ShouldQueue
             ->subject("Your {$this->plan} trial for {$this->workspace->name} has ended")
             ->greeting('Your trial has ended')
             ->line("The {$this->plan} trial for {$this->workspace->name} has run its course. There was no card on file, so nothing has been charged.")
-            ->line('The workspace has moved to our free tier. Everything you created is still there and still yours — the free plan simply has smaller limits.')
+            ->line('The workspace is now read-only. Everything you created is still there and still yours, and stays readable for as long as you like.')
             ->action('Choose a plan', url('/billing'))
-            ->line('If you were over the free limits, the workspace is read-only until you pick a plan or free up some space. Nothing is deleted either way.');
+            ->line('Choosing a plan turns writing back on straight away. Nothing is deleted while you decide.');
     }
 }

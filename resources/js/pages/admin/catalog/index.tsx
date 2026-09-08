@@ -103,8 +103,10 @@ function PlanCard({
                         <span className="text-xs font-normal text-muted-foreground">
                             {plan.code}
                         </span>
+                        {/* Not a product: where a workspace rests when no
+                            subscription is live. Never sold, never public. */}
                         {plan.is_free && (
-                            <Badge variant="secondary">Free tier</Badge>
+                            <Badge variant="secondary">Read-only floor</Badge>
                         )}
                         {plan.is_archived && (
                             <Badge variant="outline">Retired</Badge>
@@ -203,7 +205,7 @@ function PlanCard({
                         {plan.prices.length === 0 && (
                             <li className="text-muted-foreground">
                                 {plan.is_free
-                                    ? 'A free plan never reaches the payment provider, so it has no price.'
+                                    ? 'The floor plan is never sold, so it has no price and never reaches the payment provider.'
                                     : 'No price yet — this plan cannot be sold.'}
                             </li>
                         )}

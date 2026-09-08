@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\WebhookEventSource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,7 +19,7 @@ class WebhookEvent extends Model
     use HasFactory;
 
     protected $fillable = [
-        'provider', 'event_id', 'event_type', 'payload', 'signature_verified',
+        'provider', 'source', 'event_id', 'event_type', 'payload', 'signature_verified',
         'occurred_at', 'received_at', 'processed_at', 'failed_at',
         'attempts', 'error', 'workspace_id',
     ];
@@ -27,6 +28,7 @@ class WebhookEvent extends Model
     {
         return [
             'payload' => 'array',
+            'source' => WebhookEventSource::class,
             'signature_verified' => 'boolean',
             'occurred_at' => 'datetime',
             'received_at' => 'datetime',
@@ -41,10 +43,18 @@ class WebhookEvent extends Model
         return $query->whereNull('processed_at');
     }
 
-    /** An unverified event must never be allowed to move billing state. */
+    /**
+     * An unverified event must never be allowed to move billing state.
+     *
+     * A PULLED event is trustworthy without a signature, and deliberately so:
+     * it is the answer to a request we made to Dodo, so there was no
+     * untrusted caller in the path to authenticate. Everything that arrives
+     * unsolicited still has to prove itself.
+     */
     public function isTrustworthy(): bool
     {
-        return $this->signature_verified === true;
+        return $this->signature_verified === true
+            || $this->source?->isSelfOriginated() === true;
     }
 
     public function workspace(): BelongsTo

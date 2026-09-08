@@ -12,7 +12,13 @@ namespace App\Enums;
  */
 enum WorkspaceDisplayState: string
 {
-    case Free = 'free';
+    /*
+     * Nobody is paying for this workspace: either they never started, or their
+     * subscription ended. Both read the same to the customer - everything is
+     * still here and still readable, and nothing can be changed until there is
+     * a live plan again.
+     */
+    case Expired = 'expired';
     case Trialing = 'trialing';
     case Active = 'active';
     case PastDue = 'past_due';
@@ -23,7 +29,7 @@ enum WorkspaceDisplayState: string
     public function label(): string
     {
         return match ($this) {
-            self::Free => 'Free',
+            self::Expired => 'Read-only',
             self::Trialing => 'Trialing',
             self::Active => 'Active',
             self::PastDue => 'Past due',

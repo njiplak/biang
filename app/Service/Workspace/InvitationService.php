@@ -39,7 +39,7 @@ class InvitationService implements InvitationContract
             $price = $this->seatAddonPrice($workspace);
 
             if ($price === null) {
-                // Section 12: no payment account on the free tier, so there is
+                // No payment account until they buy, so there is
                 // no seat to sell - the offer there is an upgrade.
                 throw new NoActiveSubscription($workspace);
             }
@@ -52,7 +52,7 @@ class InvitationService implements InvitationContract
 
     /**
      * The seat add-on sold on this workspace's current plan, if any. Null on
-     * the free tier, or when the plan simply does not sell extra seats.
+     * without a subscription, or when the plan does not sell extra seats.
      */
     public function seatAddonPrice(Workspace $workspace): ?AddonPrice
     {

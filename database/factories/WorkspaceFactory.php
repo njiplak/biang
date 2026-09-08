@@ -17,7 +17,7 @@ class WorkspaceFactory extends Factory
         return [
             'slug' => str($name)->slug()->append('-'.fake()->unique()->numberBetween(1, 999999))->toString(),
             'name' => $name,
-            'billing_status' => BillingStatus::Free,
+            'billing_status' => BillingStatus::Unpaid,
             'access_status' => AccessStatus::Active,
             'settings' => [],
         ];

@@ -134,11 +134,27 @@ export type RecentWebhook = {
     failed_at: string | null;
 };
 
+/**
+ * Metered usage we recorded and never billed for. Filtered to workspaces that
+ * actually have a payment account - free and comped ones never reach Dodo, and
+ * their records stay unreported forever by design.
+ */
+export type UnreportedUsage = {
+    id: number;
+    workspace_ulid: string | null;
+    workspace_name: string | null;
+    feature: string;
+    quantity: number;
+    occurred_at: string | null;
+    idempotency_key: string;
+};
+
 export type BillingOpsOverview = {
     failed_webhooks: FailedWebhook[];
     dunning: DunningRow[];
     integrity: IntegrityAlarm[];
     recent_webhooks: RecentWebhook[];
+    unreported_usage: UnreportedUsage[];
 };
 
 /** Mirrors App\Service\Admin\AuditViewService. */

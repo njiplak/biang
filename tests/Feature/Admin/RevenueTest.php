@@ -107,20 +107,38 @@ it('leaves a running trial out of MRR', function () {
 });
 
 /*
- * A converted trial is exactly derivable: convertTrial leaves trial_ends_at set
- * and moves the status to active, and nothing else produces that shape.
+ * Measured over the trials that have ENDED, which is when one either converted
+ * or did not. A trial still running has not had its chance, so it reads as "no
+ * data" rather than as 0% - the same distinction the test below draws for
+ * having no trials at all. Counting running trials as misses reported a rate
+ * that was wrong by however many trials happened to be open that day.
  */
 it('measures trial to paid conversion', function () {
     $workspace = app(WorkspaceContract::class)->create($starter = User::factory()->create(), 'Acme');
     $subscription = app(SubscriptionContract::class)->startTrial($workspace, $this->monthly, $starter);
 
     expect($this->revenue->summary()['trials'])
-        ->toMatchArray(['running' => 1, 'started_total' => 1, 'converted_total' => 0, 'conversion_rate' => 0.0]);
+        ->toMatchArray([
+            'running' => 1,
+            'started_total' => 1,
+            'ended_total' => 0,
+            'converted_total' => 0,
+            'conversion_rate' => null,
+        ]);
 
+    // Section 4 charges at the end of day 14, so the trial runs out first and
+    // the conversion follows. There is no other order.
+    $subscription->update(['trial_ends_at' => now()->subHour()]);
     app(SubscriptionContract::class)->convertTrial($subscription);
 
     expect($this->revenue->summary()['trials'])
-        ->toMatchArray(['running' => 0, 'started_total' => 1, 'converted_total' => 1, 'conversion_rate' => 100.0]);
+        ->toMatchArray([
+            'running' => 0,
+            'started_total' => 1,
+            'ended_total' => 1,
+            'converted_total' => 1,
+            'conversion_rate' => 100.0,
+        ]);
 });
 
 // "No data" and "0%" say very different things on a dashboard.

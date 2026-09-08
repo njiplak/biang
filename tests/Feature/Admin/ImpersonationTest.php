@@ -275,3 +275,111 @@ it('refuses a customer trying to impersonate', function () {
 
     expect(ImpersonationSession::count())->toBe(0);
 });
+
+// ------------------------------------------- staff who lose access mid-session
+
+/*
+ * The other half of "deactivating a staff member cuts their access now".
+ * Impersonation swaps the WEB guard to the customer and leaves it there, and
+ * nothing on the customer side ever looked at who put it there - so a leaver
+ * kept a live session inside a customer's account, which is a worse door than
+ * the console one.
+ *
+ * leaveConsole() below models what the next request actually looks like. Both
+ * of its lines are load-bearing:
+ *
+ * - actingAs(..., 'admin') sets the DEFAULT guard to `admin` for the rest of
+ *   the test, so `auth` on a customer route would check the wrong guard. In
+ *   production the default is `web` and always was.
+ * - the test process keeps one container, so a guard answers from whatever it
+ *   resolved earlier unless the instances are dropped. Production resolves
+ *   from the session on every request.
+ */
+function leaveConsole(): void
+{
+    Auth::shouldUse('web');
+    Auth::forgetGuards();
+}
+it('ends an impersonation the moment the staff member is deactivated', function () {
+    $this->actingAs($this->support, 'admin')
+        ->post(route('admin.customer.impersonate', $this->workspace), [
+            'user_id' => $this->owner->id,
+            'reason' => 'Reproducing the export bug',
+        ]);
+
+    expect(Auth::guard('web')->id())->toBe($this->owner->id);
+
+    $this->support->update(['is_active' => false]);
+    leaveConsole();
+
+    $this->get(route('dashboard'))->assertRedirect(route('admin.login'));
+
+    expect(Auth::guard('web')->check())->toBeFalse()
+        ->and(Auth::guard('admin')->check())->toBeFalse()
+        ->and(session(ImpersonationController::SESSION_KEY))->toBeNull();
+});
+
+it('ends an impersonation the moment the staff member is offboarded', function () {
+    $this->actingAs($this->support, 'admin')
+        ->post(route('admin.customer.impersonate', $this->workspace), [
+            'user_id' => $this->owner->id,
+            'reason' => 'Reproducing the export bug',
+        ]);
+
+    $this->support->delete();
+    leaveConsole();
+
+    $this->get(route('dashboard'))->assertRedirect(route('admin.login'));
+
+    expect(Auth::guard('web')->check())->toBeFalse();
+});
+
+// The record has to say it ended, or the leaver's row stays open forever.
+it('closes the record when it ends one that way', function () {
+    $this->actingAs($this->support, 'admin')
+        ->post(route('admin.customer.impersonate', $this->workspace), [
+            'user_id' => $this->owner->id,
+            'reason' => 'Reproducing the export bug',
+        ]);
+
+    $session = ImpersonationSession::where('admin_user_id', $this->support->id)->firstOrFail();
+
+    $this->support->update(['is_active' => false]);
+    leaveConsole();
+
+    $this->get(route('dashboard'));
+
+    expect($session->fresh()->isActive())->toBeFalse();
+});
+
+// A customer signed in as themselves has no impersonation key, and must not
+// pay for this check with their session.
+it('leaves an ordinary customer session alone', function () {
+    $this->actingAs($this->owner)
+        ->get(route('dashboard'))
+        ->assertOk();
+
+    expect(Auth::guard('web')->check())->toBeTrue();
+});
+
+/*
+ * ImpersonationController::stop only tears down the customer session in the
+ * browser carrying the key, so stopping from the console leaves any OTHER tab
+ * still signed in as the customer against a record that says it ended.
+ */
+it('ends a session in a second browser once the record is closed', function () {
+    $this->actingAs($this->support, 'admin')
+        ->post(route('admin.customer.impersonate', $this->workspace), [
+            'user_id' => $this->owner->id,
+            'reason' => 'Reproducing the export bug',
+        ]);
+
+    $session = ImpersonationSession::where('admin_user_id', $this->support->id)->firstOrFail();
+    $this->impersonation->stop($session);
+
+    leaveConsole();
+
+    $this->get(route('dashboard'))->assertRedirect(route('admin.login'));
+
+    expect(Auth::guard('web')->check())->toBeFalse();
+});

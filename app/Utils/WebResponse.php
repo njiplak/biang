@@ -19,12 +19,12 @@ class WebResponse
 
         if (is_array($redirect)) {
             [$routeName, $params] = $redirect;
+
             return Inertia::location(route($routeName, $params));
         }
 
         return Inertia::location(route($redirect));
     }
-
 
     public static function inertia($result, $redirectRoute, $param = null)
     {
@@ -48,13 +48,13 @@ class WebResponse
     {
         if ($result instanceof Exception) {
             return response()->json([
-                "message" => $result->getMessage(),
-                "data" => $result,
+                'message' => $result->getMessage(),
+                'data' => $result,
             ], 400);
         } else {
             return response()->json([
-                "message" => $message,
-                "data" => $result,
+                'message' => $message,
+                'data' => $result,
             ], $status);
         }
     }

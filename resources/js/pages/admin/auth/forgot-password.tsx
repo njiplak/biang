@@ -4,20 +4,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 /**
- * Staff login. Deliberately separate from the customer login: a customer
- * account can never authenticate here, and this form never links across to it.
+ * Staff recovery. Deliberately its own screen rather than the customer one:
+ * the token is minted by a different broker, and the two must never meet.
  */
-export default function AdminLogin({ status }: { status?: string }) {
-    const form = useForm({ email: '', password: '', remember: false });
+export default function AdminForgotPassword({ status }: { status?: string }) {
+    const form = useForm({ email: '' });
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
-        form.post('/admin/login', { onFinish: () => form.reset('password') });
+        form.post('/admin/forgot-password');
     };
 
     return (
         <div className="flex min-h-svh items-center justify-center bg-background p-6">
-            <Head title="Staff sign in" />
+            <Head title="Reset staff password" />
 
             <form
                 onSubmit={submit}
@@ -25,10 +25,10 @@ export default function AdminLogin({ status }: { status?: string }) {
             >
                 <div className="flex flex-col gap-1">
                     <h1 className="text-lg font-semibold tracking-tight">
-                        Staff console
+                        Reset your password
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                        Internal access only.
+                        We will email a link to your staff address.
                     </p>
                 </div>
 
@@ -45,6 +45,7 @@ export default function AdminLogin({ status }: { status?: string }) {
                         value={form.data.email}
                         onChange={(e) => form.setData('email', e.target.value)}
                         required
+                        autoFocus
                     />
                     {form.errors.email && (
                         <p className="text-xs text-destructive">
@@ -53,34 +54,15 @@ export default function AdminLogin({ status }: { status?: string }) {
                     )}
                 </div>
 
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                        id="password"
-                        type="password"
-                        autoComplete="current-password"
-                        value={form.data.password}
-                        onChange={(e) =>
-                            form.setData('password', e.target.value)
-                        }
-                        required
-                    />
-                    {form.errors.password && (
-                        <p className="text-xs text-destructive">
-                            {form.errors.password}
-                        </p>
-                    )}
-                </div>
-
                 <Button type="submit" disabled={form.processing}>
-                    Sign in
+                    Email a reset link
                 </Button>
 
                 <Link
-                    href="/admin/forgot-password"
+                    href="/admin/login"
                     className="text-center text-sm underline underline-offset-4"
                 >
-                    Forgot your password?
+                    Back to sign in
                 </Link>
             </form>
         </div>

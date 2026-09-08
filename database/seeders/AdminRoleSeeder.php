@@ -33,7 +33,6 @@ class AdminRoleSeeder extends Seeder
             'customer.view',
             'customer.impersonate',
             'workspace.suspend',
-            'user.view',
         ],
 
         // "Close a deal / rescue a customer. Sales cannot wait for a deploy."
@@ -70,8 +69,19 @@ class AdminRoleSeeder extends Seeder
         'page.update' => 'Update and publish content pages',
         'page.delete' => 'Delete content pages',
 
-        // Gating the pre-existing backoffice screens, which moved onto the
-        // admin guard when section 3's separation was enforced.
+        /*
+         * Gating the pre-existing backoffice screens, which moved onto the
+         * admin guard when section 3's separation was enforced.
+         *
+         * `user.*` used to live here too, behind a starter-kit CRUD over the
+         * customer `users` table. It assigned spatie roles that decide nothing
+         * for a customer - section 2 answers that per workspace, from
+         * WorkspaceRole - and its delete went straight past the retention
+         * path in PurgeClosedWorkspaces. The screen is gone, so the
+         * permissions gating it are too. A real person-level view is still
+         * owed, and should carry a `customer.`-shaped permission with the rest
+         * of the support tooling rather than resurrect these.
+         */
         'setting.view' => 'View application settings',
         'setting.create' => 'Create application settings',
         'setting.update' => 'Update application settings',
@@ -84,10 +94,6 @@ class AdminRoleSeeder extends Seeder
         'permission.create' => 'Create permissions',
         'permission.update' => 'Update permissions',
         'permission.delete' => 'Delete permissions',
-        'user.view' => 'View customer accounts',
-        'user.create' => 'Create customer accounts',
-        'user.update' => 'Update customer accounts',
-        'user.delete' => 'Delete customer accounts',
     ];
 
     public function run(): void

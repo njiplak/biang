@@ -3,10 +3,9 @@
 use App\Http\Controllers\Setting\PermissionController;
 use App\Http\Controllers\Setting\RoleController;
 use App\Http\Controllers\Setting\SettingController;
-use App\Http\Controllers\Setting\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::group(['middleware' => 'auth:admin', 'prefix' => 'admin/setting', 'as' => 'admin.setting.'], function () {
+Route::group(['middleware' => ['auth:admin', 'admin.active', 'admin.2fa'], 'prefix' => 'admin/setting', 'as' => 'admin.setting.'], function () {
 
     Route::group(['prefix' => 'setting', 'as' => 'setting.'], function () {
         Route::get('/', [SettingController::class, 'index'])->name('index')->middleware('permission:setting.view');
@@ -28,17 +27,6 @@ Route::group(['middleware' => 'auth:admin', 'prefix' => 'admin/setting', 'as' =>
         Route::put('/{id}', [RoleController::class, 'update'])->name('update')->middleware('permission:role.update');
         Route::delete('/{id}', [RoleController::class, 'destroy'])->name('destroy')->middleware('permission:role.delete');
         Route::post('/destroy-bulk', [RoleController::class, 'destroy_bulk'])->name('destroy-bulk')->middleware('permission:role.delete');
-    });
-
-    Route::group(['prefix' => 'user', 'as' => 'user.'], function () {
-        Route::get('/', [UserController::class, 'index'])->name('index')->middleware('permission:user.view');
-        Route::get('/fetch', [UserController::class, 'fetch'])->name('fetch')->middleware('permission:user.view');
-        Route::get('/create', [UserController::class, 'create'])->name('create')->middleware('permission:user.create');
-        Route::post('/', [UserController::class, 'store'])->name('store')->middleware('permission:user.create');
-        Route::get('/{id}', [UserController::class, 'show'])->name('show')->middleware('permission:user.update');
-        Route::put('/{id}', [UserController::class, 'update'])->name('update')->middleware('permission:user.update');
-        Route::delete('/{id}', [UserController::class, 'destroy'])->name('destroy')->middleware('permission:user.delete');
-        Route::post('/destroy-bulk', [UserController::class, 'destroy_bulk'])->name('destroy-bulk')->middleware('permission:user.delete');
     });
 
     Route::group(['prefix' => 'permission', 'as' => 'permission.'], function () {

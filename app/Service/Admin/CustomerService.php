@@ -7,9 +7,11 @@ use App\Contract\Billing\UsageContract;
 use App\Enums\WorkspaceRole;
 use App\Models\Feature;
 use App\Models\InvoiceSummary;
+use App\Models\NotificationLog;
 use App\Models\Plan;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
+use App\Models\UsageRecord;
 use App\Models\Workspace;
 use App\Models\WorkspaceEntitlement;
 use App\Models\WorkspaceEntitlementOverride;
@@ -98,6 +100,14 @@ class CustomerService implements CustomerContract
              * to choose between before any table has loaded.
              */
             'members' => $this->membersPayload($workspace),
+            /*
+             * notification_logs records the milestone, not the recipient -
+             * that uniqueness is what makes a duplicate charge warning
+             * impossible - so the email history can say WHAT went out and
+             * when, but never to whom. This is the honest other half: who a
+             * billing email would reach if we sent one now.
+             */
+            'billing_recipients' => $this->billingRecipients($workspace),
             // What the actions on this page can offer.
             'plans' => $this->planOptions(),
             'features' => $this->featureOptions(),
@@ -150,10 +160,10 @@ class CustomerService implements CustomerContract
     }
 
     /** The detail page's lists, and the only values paginateDetail() accepts. */
-    public const LISTS = ['members', 'entitlements', 'overrides', 'invoices'];
+    public const LISTS = ['members', 'entitlements', 'overrides', 'invoices', 'notifications', 'usage'];
 
     /**
-     * One of the detail page's four lists, paginated for its table.
+     * One of the detail page's lists, paginated for its table.
      *
      * Each reuses the SAME presenter the page payload uses, so a column cannot
      * mean one thing on first render and another after paging.
@@ -197,6 +207,36 @@ class CustomerService implements CustomerContract
                 ->orderByDesc('issued_at')
                 ->paginate($perPage)
                 ->through(fn (InvoiceSummary $invoice) => $this->presentInvoice($invoice)),
+
+            /*
+             * Section 16: the trial auto-charges, so "you charged me with no
+             * warning" is a chargeback waiting to happen. Every billing command
+             * writes here through BillingNotifier, and nothing read it until
+             * now - which made that dispute unanswerable from the console.
+             *
+             * Not workspace-scoped as a model, so this filters by hand.
+             */
+            'notifications' => NotificationLog::query()
+                ->where('workspace_id', $workspace->id)
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->where('type', 'like', "%{$term}%"))
+                ->orderByDesc('sent_at')
+                ->paginate($perPage)
+                ->through(fn (NotificationLog $log) => $this->presentNotification($log)),
+
+            /*
+             * The metered ledger, not the counters: `entitlements` above
+             * already shows the current level of every feature, and what is
+             * missing is the events behind a metered bill - including whether
+             * each one actually reached the provider.
+             */
+            'usage' => UsageRecord::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->when($search, fn (Builder $query, string $term) => $query
+                    ->where('feature_key', 'like', "%{$term}%"))
+                ->orderByDesc('occurred_at')
+                ->paginate($perPage)
+                ->through(fn (UsageRecord $record) => $this->presentUsageRecord($record)),
 
             default => throw new InvalidArgumentException("Unknown customer list [{$list}]."),
         };
@@ -256,6 +296,68 @@ class CustomerService implements CustomerContract
             'issued_at' => $invoice->issued_at,
             'paid_at' => $invoice->paid_at,
             'hosted_url' => $invoice->hosted_url,
+        ];
+    }
+
+    /**
+     * The milestones BillingNotifier sends, in the words a staff member would
+     * use to a customer.
+     *
+     * The dunning reminders build their type from a day count at send time, so
+     * no map can be complete - an unknown key renders as itself rather than as
+     * an empty column, and the raw `type` ships alongside the label either way.
+     */
+    private const NOTIFICATION_LABELS = [
+        'trial_ending_3d' => 'Trial ending in 3 days',
+        'trial_ending_1d' => 'Trial ending tomorrow',
+        'trial_converted' => 'Trial converted',
+        'trial_ended_unpaid' => 'Trial ended unpaid',
+        'payment_failed' => 'Payment failed',
+        'grace_ended' => 'Grace period ended',
+    ];
+
+    /** @return array<string, mixed> */
+    private function presentNotification(NotificationLog $log): array
+    {
+        return [
+            'id' => $log->id,
+            'type' => $log->type,
+            'label' => self::NOTIFICATION_LABELS[$log->type]
+                ?? ucfirst(str_replace('_', ' ', $log->type)),
+            'channel' => $log->channel,
+            'sent_at' => $log->sent_at,
+        ];
+    }
+
+    /**
+     * Section 9's rule, read off the enum rather than restated: the owner and
+     * any billing manager, never regular members. A second copy of that list
+     * here would drift from the one BillingNotifier actually sends to.
+     *
+     * @return string[]
+     */
+    private function billingRecipients(Workspace $workspace): array
+    {
+        return $workspace->members()->with('user')->get()
+            ->filter(fn (WorkspaceMember $member) => $member->role->receivesBillingNotifications())
+            ->map(fn (WorkspaceMember $member) => $member->user?->email)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /** @return array<string, mixed> */
+    private function presentUsageRecord(UsageRecord $record): array
+    {
+        return [
+            'id' => $record->id,
+            'feature' => $record->feature_key,
+            'quantity' => $record->quantity,
+            'occurred_at' => $record->occurred_at,
+            'is_reported' => $record->reported_at !== null,
+            'reported_at' => $record->reported_at,
+            // Section 8: the id to quote back when a charge is disputed.
+            'dodo_event_id' => $record->dodo_event_id,
         ];
     }
 

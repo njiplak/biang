@@ -3,32 +3,30 @@
 namespace App\Service;
 
 use App\Contract\AuthContract;
+use Exception;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Exception;
 
 class AuthService implements AuthContract
 {
     protected string $username = 'email';
-    protected string|null $guard = null;
-    protected string|null $guardForeignKey = null;
+
+    protected ?string $guard = null;
+
+    protected ?string $guardForeignKey = null;
+
     protected Model $model;
 
     /**
      * Repositories constructor.
-     *
-     * @param Model $model
      */
     public function __construct(Model $model)
     {
         $this->model = $model;
     }
 
-    /**
-     * @return Model
-     */
     public function build(): Model
     {
         return $this->model;
@@ -36,8 +34,6 @@ class AuthService implements AuthContract
 
     /**
      * Get user id by guard name.
-     *
-     * @return int
      */
     public function userID(): int
     {
@@ -100,7 +96,6 @@ class AuthService implements AuthContract
     /**
      * Register new user.
      *
-     * @param array $payloads
      * @return Exception
      */
     public function register(array $payloads, $assignRole = [])
@@ -109,14 +104,16 @@ class AuthService implements AuthContract
             DB::beginTransaction();
 
             $user = $this->model->create($payloads);
-            if ($assignRole)
+            if ($assignRole) {
                 $user->assignRole($assignRole);
+            }
 
             DB::commit();
 
             return $user;
         } catch (Exception $exception) {
             DB::rollBack();
+
             return $exception;
         }
     }
@@ -124,7 +121,6 @@ class AuthService implements AuthContract
     /**
      * Update user role and profile.
      *
-     * @param array $payloads
      * @return Exception
      */
     public function update($id, array $payloads, $assignRole = [])
@@ -134,14 +130,16 @@ class AuthService implements AuthContract
 
             $user = $this->model->find($id);
             $user->update($payloads);
-            if ($assignRole)
+            if ($assignRole) {
                 $user->syncRoles($assignRole);
+            }
 
             DB::commit();
 
             return $user->first();
         } catch (Exception $exception) {
             DB::rollBack();
+
             return $exception;
         }
     }
@@ -155,6 +153,7 @@ class AuthService implements AuthContract
     {
         try {
             Auth::guard($this->guard)->logout();
+
             return true;
         } catch (Exception $exception) {
             return $exception;

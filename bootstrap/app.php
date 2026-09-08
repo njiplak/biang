@@ -2,6 +2,9 @@
 
 use App\Exceptions\Domain\DomainException;
 use App\Http\Middleware\CheckPermission;
+use App\Http\Middleware\EndImpersonationForRevokedStaff;
+use App\Http\Middleware\EnsureAdminIsActive;
+use App\Http\Middleware\EnsureAdminTwoFactor;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspace;
@@ -97,6 +100,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             HandleAppearance::class,
+            /*
+             * Before ResolveWorkspace, so a session whose staff member has been
+             * deactivated never gets as far as resolving the customer's
+             * workspace and answering policies out of it.
+             */
+            EndImpersonationForRevokedStaff::class,
             // after the session is started, so the switcher's choice is readable
             ResolveWorkspace::class,
             HandleInertiaRequests::class,
@@ -105,6 +114,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'permission' => CheckPermission::class,
+            // Both run AFTER auth:admin, which is what makes the admin guard
+            // the default one and so what makes $request->user('admin') resolve.
+            'admin.active' => EnsureAdminIsActive::class,
+            'admin.2fa' => EnsureAdminTwoFactor::class,
         ]);
 
         // An unauthenticated visitor to /admin belongs at the admin login, not

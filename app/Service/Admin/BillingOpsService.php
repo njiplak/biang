@@ -7,6 +7,7 @@ use App\Contract\Billing\ReconcilerContract;
 use App\Enums\BillingSource;
 use App\Models\DunningState;
 use App\Models\Subscription;
+use App\Models\UsageRecord;
 use App\Models\WebhookEvent;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,13 +27,23 @@ class BillingOpsService implements BillingOpsContract
     private const LIMIT = 50;
 
     /**
+     * How long a metered record may sit unreported before it counts as stuck.
+     *
+     * ReportUsageToProvider retries four times on a [60, 300, 900] backoff, so
+     * its last attempt lands about 21 minutes out. Anything younger than this
+     * is still in flight, and alarming on it would train staff to ignore the
+     * list.
+     */
+    private const REPORTING_GRACE_MINUTES = 60;
+
+    /**
      * The lists this screen shows, and the only values paginate() accepts.
      *
      * An allow-list rather than a free string: the value arrives from a query
      * parameter, and turning that into a method name would let anyone call
      * anything on this class.
      */
-    public const LISTS = ['failed_webhooks', 'dunning', 'integrity', 'recent_webhooks'];
+    public const LISTS = ['failed_webhooks', 'dunning', 'integrity', 'recent_webhooks', 'unreported_usage'];
 
     public function __construct(private readonly ReconcilerContract $reconciler) {}
 
@@ -49,6 +60,8 @@ class BillingOpsService implements BillingOpsContract
                 ->through(fn (Subscription $subscription) => $this->presentIntegrity($subscription)),
             'recent_webhooks' => $this->recentWebhookQuery($search)->paginate($perPage)
                 ->through(fn (WebhookEvent $event) => $this->presentRecentWebhook($event)),
+            'unreported_usage' => $this->unreportedUsageQuery($search)->paginate($perPage)
+                ->through(fn (UsageRecord $record) => $this->presentUnreportedUsage($record)),
             default => throw new InvalidArgumentException("Unknown billing-ops list [{$list}]."),
         };
     }
@@ -60,6 +73,7 @@ class BillingOpsService implements BillingOpsContract
             'dunning' => $this->dunning(),
             'integrity' => $this->integrityAlarms(),
             'recent_webhooks' => $this->recentWebhooks(),
+            'unreported_usage' => $this->unreportedUsage(),
         ];
     }
 
@@ -213,6 +227,63 @@ class BillingOpsService implements BillingOpsContract
             'received_at' => $event->received_at,
             'processed_at' => $event->processed_at,
             'failed_at' => $event->failed_at,
+        ];
+    }
+
+    /**
+     * Metered usage we recorded and never billed for.
+     *
+     * Every other list here is about a message that arrived and went wrong.
+     * This one is about money that should have left and did not: the job that
+     * carries a record to Dodo gives up after four tries and leaves
+     * `reported_at` null, which the job's own docblock calls "a findable state
+     * rather than a lost one" - and nothing was finding it.
+     */
+    private function unreportedUsage(): array
+    {
+        return $this->unreportedUsageQuery(null)
+            ->limit(self::LIMIT)
+            ->get()
+            ->map(fn (UsageRecord $record) => $this->presentUnreportedUsage($record))
+            ->all();
+    }
+
+    private function unreportedUsageQuery(?string $search): Builder
+    {
+        return UsageRecord::withoutWorkspaceScope()
+            ->unreported()
+            /*
+             * The exclusion that makes this list worth reading. Section 12
+             * keeps free and comped workspaces away from Dodo entirely, and
+             * ReportUsageToProvider returns early without stamping
+             * `reported_at` when there is no payment account - while section 7
+             * still meters them for the hard block. Those rows are correct and
+             * permanent, and counting them would bury every real one.
+             */
+            ->whereHas('workspace', fn (Builder $query) => $query->whereNotNull('dodo_customer_id'))
+            // created_at, not occurred_at: what is being timed is how long the
+            // job has had to carry it, and the row is what dispatched the job.
+            ->where('created_at', '<=', now()->subMinutes(self::REPORTING_GRACE_MINUTES))
+            ->with('workspace')
+            ->when($search, fn (Builder $query, string $term) => $query
+                ->where(fn (Builder $q) => $q
+                    ->where('feature_key', 'like', "%{$term}%")
+                    ->orWhereHas('workspace', fn (Builder $w) => $w->where('name', 'like', "%{$term}%"))))
+            ->orderBy('created_at');
+    }
+
+    /** @return array<string, mixed> */
+    private function presentUnreportedUsage(UsageRecord $record): array
+    {
+        return [
+            'id' => $record->id,
+            'workspace_ulid' => $record->workspace?->ulid,
+            'workspace_name' => $record->workspace?->name,
+            'feature' => $record->feature_key,
+            'quantity' => $record->quantity,
+            'occurred_at' => $record->occurred_at,
+            // What to quote to the provider, and what the retry deduplicates on.
+            'idempotency_key' => $record->idempotency_key,
         ];
     }
 

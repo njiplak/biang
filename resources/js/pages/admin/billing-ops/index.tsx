@@ -15,6 +15,7 @@ import type {
     FailedWebhook,
     IntegrityAlarm,
     RecentWebhook,
+    UnreportedUsage,
 } from '@/types/catalog';
 
 function when(value: string | null) {
@@ -65,6 +66,7 @@ export default function BillingOpsIndex({
     failed_webhooks,
     dunning,
     integrity,
+    unreported_usage,
 }: BillingOpsOverview) {
     // Bumped after a retry so every table re-reads: replaying an event can move
     // a row out of "failed" and into "recently received" at the same time.
@@ -92,7 +94,8 @@ export default function BillingOpsIndex({
     const healthy =
         failed_webhooks.length === 0 &&
         integrity.length === 0 &&
-        dunning.length === 0;
+        dunning.length === 0 &&
+        unreported_usage.length === 0;
 
     const failedColumns: ColumnDef<FailedWebhook, any>[] = [
         failedHelper.accessor('event_type', {
@@ -287,6 +290,49 @@ export default function BillingOpsIndex({
         }),
     ];
 
+    const unreportedColumns: ColumnDef<UnreportedUsage, any>[] = [
+        unreportedHelper.display({
+            id: 'workspace',
+            header: 'Customer',
+            cell: (ctx) => (
+                <WorkspaceLink
+                    ulid={ctx.row.original.workspace_ulid}
+                    name={ctx.row.original.workspace_name}
+                />
+            ),
+        }),
+        unreportedHelper.accessor('feature', {
+            id: 'feature',
+            header: 'Feature',
+            enableColumnFilter: false,
+        }),
+        unreportedHelper.accessor('quantity', {
+            id: 'quantity',
+            header: 'Quantity',
+            enableColumnFilter: false,
+        }),
+        unreportedHelper.display({
+            id: 'occurred_at',
+            header: 'Occurred',
+            cell: (ctx) => (
+                <span className="text-muted-foreground">
+                    {when(ctx.row.original.occurred_at)}
+                </span>
+            ),
+        }),
+        unreportedHelper.display({
+            id: 'idempotency_key',
+            header: 'Key',
+            // What the provider deduplicates on, so it is the thing to quote
+            // when asking them whether they ever saw the event.
+            cell: (ctx) => (
+                <span className="font-mono text-xs text-muted-foreground">
+                    {ctx.row.original.idempotency_key}
+                </span>
+            ),
+        }),
+    ];
+
     return (
         <div className="flex flex-col gap-6">
             <Head title="Billing operations" />
@@ -303,7 +349,8 @@ export default function BillingOpsIndex({
                 <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
                     <CheckCircle2 className="size-4 shrink-0" />
                     Nothing needs attention. Every webhook applied, nobody is in
-                    dunning, and no subscription is missing its provider record.
+                    dunning, no subscription is missing its provider record, and
+                    every metered event reached the provider.
                 </div>
             )}
 
@@ -350,6 +397,18 @@ export default function BillingOpsIndex({
                 params={{ _refresh: refresh }}
                 searchPlaceholder="Search by event type..."
             />
+
+            {/* Every other list here is a message that arrived and went wrong.
+                This one is money that should have left and did not. */}
+            <NextTable<UnreportedUsage>
+                id="id"
+                title="Usage we never billed for"
+                description="Metered events that never reached the provider after the job stopped retrying. Workspaces with no payment account are not counted — their usage never goes to the provider by design."
+                columns={unreportedColumns}
+                load={loader<UnreportedUsage>('unreported_usage')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search by workspace or feature..."
+            />
         </div>
     );
 }
@@ -358,6 +417,7 @@ const failedHelper = createColumnHelper<FailedWebhook>();
 const dunningHelper = createColumnHelper<DunningRow>();
 const integrityHelper = createColumnHelper<IntegrityAlarm>();
 const recentHelper = createColumnHelper<RecentWebhook>();
+const unreportedHelper = createColumnHelper<UnreportedUsage>();
 
 BillingOpsIndex.layout = (page: React.ReactNode) => (
     <AdminLayout>{page}</AdminLayout>

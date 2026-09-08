@@ -15,8 +15,10 @@ import type {
     CustomerEntitlement,
     CustomerInvoice,
     CustomerMember,
+    CustomerNotification,
     CustomerOverride,
     CustomerOverview,
+    CustomerUsageRecord,
 } from '@/types/customer';
 import { GrantPlanDialog } from './actions/grant-plan-dialog';
 import { ImpersonateDialog } from './actions/impersonate-dialog';
@@ -34,6 +36,21 @@ function formatDate(value: string | null) {
     });
 }
 
+/**
+ * Billing disputes turn on the hour, not the day: "you charged me before the
+ * warning" is only answerable if both carry a time.
+ */
+function formatDateTime(value: string | null) {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
 function formatMoney(minor: number, currency: string) {
     return `${currency} ${(minor / 100).toFixed(2)}`;
 }
@@ -47,12 +64,15 @@ const entitlementHelper = createColumnHelper<CustomerEntitlement>();
 const overrideHelper = createColumnHelper<CustomerOverride>();
 const memberHelper = createColumnHelper<CustomerMember>();
 const invoiceHelper = createColumnHelper<CustomerInvoice>();
+const notificationHelper = createColumnHelper<CustomerNotification>();
+const usageHelper = createColumnHelper<CustomerUsageRecord>();
 
 export default function CustomerShow({
     workspace,
     subscription,
     seats,
     members,
+    billing_recipients,
     plans,
     features,
 }: CustomerOverview) {
@@ -64,7 +84,7 @@ export default function CustomerShow({
     const [refresh, setRefresh] = useState(0);
 
     /*
-     * One loader for all four lists. They are different views of the same
+     * One loader for every list. They are different views of the same
      * customer, so they share an endpoint and differ only by `list`, which the
      * server validates against its own allow-list.
      */
@@ -244,6 +264,66 @@ export default function CustomerShow({
                     {formatDate(ctx.row.original.paid_at)}
                 </span>
             ),
+        }),
+    ];
+
+    const notificationColumns: ColumnDef<CustomerNotification, any>[] = [
+        notificationHelper.display({
+            id: 'label',
+            header: 'Email',
+            cell: (ctx) => (
+                <div className="flex flex-col">
+                    <span className="font-medium">
+                        {ctx.row.original.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                        {ctx.row.original.type}
+                    </span>
+                </div>
+            ),
+        }),
+        notificationHelper.display({
+            id: 'sent_at',
+            header: 'Sent',
+            cell: (ctx) => formatDateTime(ctx.row.original.sent_at),
+        }),
+        notificationHelper.accessor('channel', {
+            id: 'channel',
+            header: 'Channel',
+            enableColumnFilter: false,
+        }),
+    ];
+
+    const usageColumns: ColumnDef<CustomerUsageRecord, any>[] = [
+        usageHelper.accessor('feature', {
+            id: 'feature',
+            header: 'Feature',
+            enableColumnFilter: false,
+        }),
+        usageHelper.accessor('quantity', {
+            id: 'quantity',
+            header: 'Quantity',
+            enableColumnFilter: false,
+        }),
+        usageHelper.display({
+            id: 'occurred_at',
+            header: 'Occurred',
+            cell: (ctx) => formatDateTime(ctx.row.original.occurred_at),
+        }),
+        usageHelper.display({
+            id: 'is_reported',
+            header: 'Billed',
+            // Unreported is not automatically wrong: a workspace with no
+            // payment account never reports, by design. Billing ops is where
+            // the ones that SHOULD have gone are chased.
+            cell: (ctx) =>
+                ctx.row.original.is_reported ? (
+                    <span title={ctx.row.original.dodo_event_id ?? undefined}>
+                        {formatDateTime(ctx.row.original.reported_at)}
+                    </span>
+                ) : (
+                    <span className="text-muted-foreground">Not reported</span>
+                ),
         }),
     ];
 
@@ -491,6 +571,36 @@ export default function CustomerShow({
                 load={detail<CustomerInvoice>('invoices')}
                 params={{ _refresh: refresh }}
                 searchPlaceholder="Search by number or status..."
+            />
+
+            {/*
+             * Section 16: the trial auto-charges, so "you charged me with no
+             * warning" is the dispute this table exists to answer.
+             */}
+            <NextTable<CustomerNotification>
+                id="id"
+                title="Emails we sent"
+                description={
+                    billing_recipients.length > 0
+                        ? `Billing email reaches ${billing_recipients.join(', ')} today. Each row is a milestone, not one message per person.`
+                        : 'Nobody in this workspace currently receives billing email.'
+                }
+                columns={notificationColumns}
+                load={detail<CustomerNotification>('notifications')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search by type..."
+            />
+
+            {/* Section 4: a metered add-on is billed on actual consumption -
+             * these rows are the record that the consumption happened. */}
+            <NextTable<CustomerUsageRecord>
+                id="id"
+                title="Metered usage"
+                description="Every metered event we recorded, and whether it reached the payment provider."
+                columns={usageColumns}
+                load={detail<CustomerUsageRecord>('usage')}
+                params={{ _refresh: refresh }}
+                searchPlaceholder="Search features..."
             />
         </div>
     );

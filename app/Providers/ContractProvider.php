@@ -4,18 +4,18 @@ namespace App\Providers;
 
 use App\Contract\Admin\AnnouncementContract;
 use App\Contract\Admin\AuditContract;
-use App\Contract\Admin\PageContract;
 use App\Contract\Admin\AuditViewContract;
 use App\Contract\Admin\BillingOpsContract;
 use App\Contract\Admin\CatalogContract;
 use App\Contract\Admin\CustomerContract;
 use App\Contract\Admin\ImpersonationContract;
+use App\Contract\Admin\PageContract;
 use App\Contract\Admin\RevenueContract;
 use App\Contract\Admin\SchedulerHealthContract;
 use App\Contract\Admin\StaffContract;
 use App\Contract\Auth\AccountContract;
-use App\Contract\Auth\BrowserSessionContract;
 use App\Contract\Auth\AdminAuthContract;
+use App\Contract\Auth\BrowserSessionContract;
 use App\Contract\Auth\TwoFactorContract;
 use App\Contract\Auth\UserAuthContract;
 use App\Contract\AuthContract;
@@ -33,25 +33,24 @@ use App\Contract\Public\PricingContract;
 use App\Contract\Setting\PermissionContract;
 use App\Contract\Setting\RoleContract;
 use App\Contract\Setting\SettingContract;
-use App\Contract\Setting\UserContract;
 use App\Contract\Workspace\InvitationContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Contract\Workspace\WorkspaceContract;
 use App\Contract\Workspace\WorkspaceMemberContract;
 use App\Service\Admin\AnnouncementService;
 use App\Service\Admin\AuditLogger;
-use App\Service\Admin\PageService;
 use App\Service\Admin\AuditViewService;
 use App\Service\Admin\BillingOpsService;
 use App\Service\Admin\CatalogService;
 use App\Service\Admin\CustomerService;
 use App\Service\Admin\ImpersonationService;
+use App\Service\Admin\PageService;
 use App\Service\Admin\RevenueService;
 use App\Service\Admin\SchedulerHealthService;
 use App\Service\Admin\StaffService;
 use App\Service\Auth\AccountService;
-use App\Service\Auth\BrowserSessionService;
 use App\Service\Auth\AdminAuthService;
+use App\Service\Auth\BrowserSessionService;
 use App\Service\Auth\TwoFactorService;
 use App\Service\Auth\UserAuthService;
 use App\Service\AuthService;
@@ -69,7 +68,6 @@ use App\Service\Public\PricingService;
 use App\Service\Setting\PermissionService;
 use App\Service\Setting\RoleService;
 use App\Service\Setting\SettingService;
-use App\Service\Setting\UserService;
 use App\Service\Workspace\InvitationService;
 use App\Service\Workspace\MembershipService;
 use App\Service\Workspace\WorkspaceMemberService;
@@ -128,7 +126,6 @@ class ContractProvider extends ServiceProvider
         SettingContract::class => SettingService::class,
         RoleContract::class => RoleService::class,
         PermissionContract::class => PermissionService::class,
-        UserContract::class => UserService::class,
     ];
 
     public function register(): void

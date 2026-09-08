@@ -9,7 +9,13 @@ beforeEach(function () {
     $this->withoutVite();
     RateLimiter::clear('staff@example.com|127.0.0.1');
 
-    $this->admin = AdminUser::factory()->create([
+    /*
+     * Unenrolled on purpose. Staff accounts carry two-factor by default now
+     * (EnsureAdminTwoFactor makes the console useless without it), but this
+     * file is about the password step and the guard separation around it - the
+     * second factor has its own file in tests/Feature/Auth/TwoFactorTest.php.
+     */
+    $this->admin = AdminUser::factory()->withoutTwoFactor()->create([
         'email' => 'staff@example.com',
         'password' => Hash::make('correct-horse'),
     ]);
@@ -147,7 +153,7 @@ it('throttles repeated failed admin logins', function () {
  * after the fact.
  */
 it('records when and from where a staff member signed in', function () {
-    $admin = AdminUser::factory()->create(['password' => Hash::make('secret-password')]);
+    $admin = AdminUser::factory()->withoutTwoFactor()->create(['password' => Hash::make('secret-password')]);
 
     expect($admin->last_login_at)->toBeNull();
 

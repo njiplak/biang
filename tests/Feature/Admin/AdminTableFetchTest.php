@@ -38,7 +38,7 @@ it('serves each billing-ops list in the table envelope', function (string $list)
         ->getJson(route('admin.billing-ops.fetch', ['list' => $list]))
         ->assertOk()
         ->assertJsonStructure(['items', 'current_page', 'next_page', 'prev_page', 'total_page']);
-})->with(['failed_webhooks', 'dunning', 'integrity', 'recent_webhooks']);
+})->with(['failed_webhooks', 'dunning', 'integrity', 'recent_webhooks', 'unreported_usage']);
 
 /*
  * The value picks a query. Anything outside the allow-list has to be refused
@@ -133,7 +133,7 @@ it('serves each customer detail list in the table envelope', function (string $l
         ->getJson(route('admin.customer.fetch-detail', ['workspace' => $this->workspace, 'list' => $list]))
         ->assertOk()
         ->assertJsonStructure(['items', 'current_page', 'total_page']);
-})->with(['members', 'entitlements', 'overrides', 'invoices']);
+})->with(['members', 'entitlements', 'overrides', 'invoices', 'notifications', 'usage']);
 
 it('returns the workspace members through the table', function () {
     WorkspaceMember::factory()->for($this->workspace)->count(2)->create();

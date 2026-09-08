@@ -23,7 +23,10 @@ class AdminAuthController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
-        return Inertia::render('admin/auth/login');
+        // Set by AdminNewPasswordController, which deliberately does not sign
+        // anybody in - without this the reset ends on a bare form with no sign
+        // that it worked.
+        return Inertia::render('admin/auth/login', ['status' => session('status')]);
     }
 
     public function attempt(LoginRequest $request): RedirectResponse

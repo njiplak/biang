@@ -3,7 +3,9 @@ import {
     Building2,
     ChevronsUpDown,
     FileText,
+    KeyRound,
     LayoutDashboard,
+    LockKeyhole,
     LogOut,
     Megaphone,
     Settings,
@@ -11,10 +13,12 @@ import {
     ShieldCheck,
     Tags,
     Timer,
-    Users,
+    UserCog,
     Wallet,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
+import FlashBanner from '@/components/flash-banner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     DropdownMenu,
@@ -116,6 +120,20 @@ function SidebarUser() {
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
+                        {/*
+                         * Two-factor is required of every staff account and
+                         * was reachable only by typing the URL, which left
+                         * re-enrolling on a new phone with nowhere to start.
+                         */}
+                        <DropdownMenuItem asChild>
+                            <Link
+                                className="block w-full cursor-pointer"
+                                href={admin.twoFactor.edit.url()}
+                            >
+                                <LockKeyhole className="mr-2" />
+                                Two-factor
+                            </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                             <Link
                                 className="block w-full cursor-pointer"
@@ -147,6 +165,110 @@ export default function AdminLayout({ children }: AppLayoutProps) {
             : currentUrl === href || currentUrl.startsWith(href + '/');
     }
 
+    const { permissions } = page.props.auth;
+    const can = (permission: string) => permissions.includes(permission);
+
+    /*
+     * Section 10 splits the console's jobs across roles, and the sidebar has
+     * to split with them. Every item used to be shown to every staff member,
+     * so finance clicked "Plans" and got a 403 - the menu advertised work the
+     * console would then refuse.
+     *
+     * Each `permission` here is the one its own route group is gated on in
+     * routes/web/admin.php and routes/web/setting.php. Dashboard carries none:
+     * it is the landing page for the guard, and its only privileged half - the
+     * revenue figures - is already withheld by DashboardController.
+     *
+     * super-admin is not a special case. AdminRoleSeeder syncs the role with
+     * every permission, so the Gate::before bypass never has to be mirrored
+     * here.
+     */
+    const menu: {
+        href: string;
+        label: string;
+        icon: LucideIcon;
+        permission?: string;
+        exact?: boolean;
+    }[] = [
+        {
+            href: admin.dashboard.url(),
+            label: 'Dashboard',
+            icon: LayoutDashboard,
+            exact: true,
+        },
+        {
+            href: admin.customer.index.url(),
+            label: 'Customers',
+            icon: Building2,
+            permission: 'customer.view',
+        },
+        {
+            href: admin.catalog.index.url(),
+            label: 'Plans',
+            icon: Tags,
+            permission: 'plan.manage',
+        },
+        {
+            href: admin.announcement.index.url(),
+            label: 'Announcements',
+            icon: Megaphone,
+            permission: 'announcement.manage',
+        },
+        {
+            href: admin.page.index.url(),
+            label: 'Pages',
+            icon: FileText,
+            permission: 'page.view',
+        },
+        {
+            href: admin.billingOps.index.url(),
+            label: 'Billing ops',
+            icon: Wallet,
+            permission: 'revenue.view',
+        },
+        {
+            href: admin.staff.index.url(),
+            label: 'Staff',
+            icon: ShieldCheck,
+            permission: 'staff.manage',
+        },
+        {
+            href: admin.audit.index.url(),
+            label: 'Audit trail',
+            icon: ScrollText,
+            permission: 'customer.view',
+        },
+        {
+            href: admin.scheduler.index.url(),
+            label: 'Scheduled tasks',
+            icon: Timer,
+            permission: 'setting.view',
+        },
+        /*
+         * Roles and permissions decide what every other item here is worth,
+         * and both had routes and screens that nothing linked to - editing a
+         * staff role meant knowing the URL by heart.
+         */
+        {
+            href: admin.setting.role.index.url(),
+            label: 'Roles',
+            icon: UserCog,
+            permission: 'role.view',
+        },
+        {
+            href: admin.setting.permission.index.url(),
+            label: 'Permissions',
+            icon: KeyRound,
+            permission: 'permission.view',
+        },
+        {
+            href: admin.setting.setting.index.url(),
+            label: 'Settings',
+            icon: Settings,
+            permission: 'setting.view',
+        },
+    ].filter((item) => item.permission === undefined || can(item.permission));
+
     return (
         <SidebarProvider defaultOpen={isOpen}>
             <Sidebar collapsible="icon" variant="sidebar">
@@ -166,160 +288,22 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                         <SidebarGroupLabel>Menu</SidebarGroupLabel>
                         <SidebarGroupContent>
                             <SidebarMenu>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.dashboard.url(),
-                                            true,
-                                        )}
-                                    >
-                                        <Link href={admin.dashboard.url()}>
-                                            <LayoutDashboard />
-                                            <span>Dashboard</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.customer.index.url(),
-                                        )}
-                                    >
-                                        <Link href={admin.customer.index.url()}>
-                                            <Building2 />
-                                            <span>Customers</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.catalog.index.url(),
-                                        )}
-                                    >
-                                        <Link href={admin.catalog.index.url()}>
-                                            <Tags />
-                                            <span>Plans</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.announcement.index.url(),
-                                        )}
-                                    >
-                                        <Link
-                                            href={admin.announcement.index.url()}
+                                {menu.map((item) => (
+                                    <SidebarMenuItem key={item.href}>
+                                        <SidebarMenuButton
+                                            asChild
+                                            isActive={isMenuActive(
+                                                item.href,
+                                                item.exact,
+                                            )}
                                         >
-                                            <Megaphone />
-                                            <span>Announcements</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.page.index.url(),
-                                        )}
-                                    >
-                                        <Link href={admin.page.index.url()}>
-                                            <FileText />
-                                            <span>Pages</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.billingOps.index.url(),
-                                        )}
-                                    >
-                                        <Link
-                                            href={admin.billingOps.index.url()}
-                                        >
-                                            <Wallet />
-                                            <span>Billing ops</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.staff.index.url(),
-                                        )}
-                                    >
-                                        <Link href={admin.staff.index.url()}>
-                                            <ShieldCheck />
-                                            <span>Staff</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.audit.index.url(),
-                                        )}
-                                    >
-                                        <Link href={admin.audit.index.url()}>
-                                            <ScrollText />
-                                            <span>Audit trail</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.scheduler.index.url(),
-                                        )}
-                                    >
-                                        <Link
-                                            href={admin.scheduler.index.url()}
-                                        >
-                                            <Timer />
-                                            <span>Scheduled tasks</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.setting.user.index.url(),
-                                        )}
-                                    >
-                                        <Link
-                                            href={admin.setting.user.index.url()}
-                                        >
-                                            <Users />
-                                            <span>Users</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isMenuActive(
-                                            admin.setting.setting.index.url(),
-                                        )}
-                                    >
-                                        <Link
-                                            href={admin.setting.setting.index.url()}
-                                        >
-                                            <Settings />
-                                            <span>Settings</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
+                                            <Link href={item.href}>
+                                                <item.icon />
+                                                <span>{item.label}</span>
+                                            </Link>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
+                                ))}
                             </SidebarMenu>
                         </SidebarGroupContent>
                     </SidebarGroup>
@@ -337,6 +321,13 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                     </h1>
                 </header>
                 <div className="flex flex-1 flex-col gap-4 p-3 sm:p-4 md:p-6">
+                    {/*
+                     * The console redirects staff without explaining itself
+                     * otherwise - EnsureAdminTwoFactor bounces them to
+                     * enrolment, and the reason it did is flashed on the
+                     * request that redirected, not the page that renders.
+                     */}
+                    <FlashBanner />
                     {children}
                 </div>
             </SidebarInset>

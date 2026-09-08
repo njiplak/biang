@@ -3,6 +3,7 @@ import { Megaphone, Tags, Users } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AdminLayout from '@/layouts/admin-layout';
+import RevenueTrends from './revenue-trends';
 import admin from '@/routes/admin';
 import type { RevenueSummary } from '@/types/customer';
 
@@ -47,7 +48,7 @@ export default function AdminDashboard({ admin: staff, revenue }: Props) {
                                     ? 'No data'
                                     : `${revenue.trials.conversion_rate}%`
                             }
-                            hint={`${revenue.trials.converted_total} of ${revenue.trials.started_total} trials`}
+                            hint={`${revenue.trials.converted_total} of ${revenue.trials.ended_total} ended trials`}
                         />
                         <Stat
                             label="Trials running"
@@ -142,6 +143,11 @@ export default function AdminDashboard({ admin: staff, revenue }: Props) {
                             </CardContent>
                         </Card>
                     </div>
+
+                    <RevenueTrends
+                        trends={revenue.trends}
+                        recovery={revenue.recovery}
+                    />
                 </>
             )}
 

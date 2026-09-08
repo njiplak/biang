@@ -12,24 +12,23 @@ use Spatie\QueryBuilder\QueryBuilder;
 class BaseService implements BaseContract
 {
     protected array $relation = [];
-    protected string|null $guard = null;
-    protected string|null $guardForeignKey = null;
+
+    protected ?string $guard = null;
+
+    protected ?string $guardForeignKey = null;
+
     protected array $fileKeys = [];
+
     protected Model $model;
 
     /**
      * Repositories constructor.
-     *
-     * @param Model $model
      */
     public function __construct(Model $model)
     {
         $this->model = $model;
     }
 
-    /**
-     * @return Model
-     */
     public function build(): Model
     {
         return $this->model;
@@ -63,8 +62,6 @@ class BaseService implements BaseContract
 
     /**
      * Get user id by guard name.
-     *
-     * @return int
      */
     public function userID(): int
     {
@@ -74,17 +71,14 @@ class BaseService implements BaseContract
     /**
      * Get all items from resource.
      *
-     * @param $allowedFilters
-     * @param $allowedSorts
-     * @param bool|null $withPaginate
      * @return array|Exception|\Illuminate\Contracts\Pagination\LengthAwarePaginator|\Illuminate\Database\Eloquent\Collection|\Illuminate\Support\HigherOrderWhenProxy[]|QueryBuilder[]
      */
     public function all(
         $allowedFilters,
         $allowedSorts,
-        bool|null $withPaginate = null,
+        ?bool $withPaginate = null,
         array $relation = [],
-        int $perPage  = 10,
+        int $perPage = 10,
         string $orderColumn = 'id',
         string $orderPosition = 'asc',
         array $conditions = [],
@@ -95,16 +89,20 @@ class BaseService implements BaseContract
                 ->allowedSorts($allowedSorts)
                 ->with(empty($relation) ? $this->relation : $relation)
                 ->where($conditions)
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->where($this->guardForeignKey, $this->userID());
                 })
                 ->orderBy($orderColumn, $orderPosition)
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->paginate()->appends(request()->query());
                 });
 
-            if (is_null($withPaginate)) $withPaginate = config('service-contract.default_paginated');
-            if (!$withPaginate) return $model->get();
+            if (is_null($withPaginate)) {
+                $withPaginate = config('service-contract.default_paginated');
+            }
+            if (! $withPaginate) {
+                return $model->get();
+            }
 
             $result = $model->paginate($this->resolvePerPage(request()->get('per_page', $perPage)))
                 ->appends(request()->query());
@@ -115,6 +113,7 @@ class BaseService implements BaseContract
             // Add order_no to each item
             $items = collect($result->items())->map(function ($item, $index) use ($startOrderNo) {
                 $item->order_no = $startOrderNo + $index;
+
                 return $item;
             })->all();
 
@@ -134,7 +133,7 @@ class BaseService implements BaseContract
     /**
      * Find item by id from resource.
      *
-     * @param mixed $id
+     * @param  mixed  $id
      * @return Exception|\Illuminate\Database\Eloquent\Collection
      */
     public function find($id, array $relation = [])
@@ -142,11 +141,11 @@ class BaseService implements BaseContract
         try {
             return $this->model
                 ->with(empty($relation) ? $this->relation : $relation)
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->where($this->guardForeignKey, $this->userID());
                 })
                 ->findOrFail($id);
-        } catch (Exception $e) {;
+        } catch (Exception $e) {
             return $e;
         }
     }
@@ -154,13 +153,12 @@ class BaseService implements BaseContract
     /**
      * Create new item to resource.
      *
-     * @param $payloads
      * @return Exception|true
      */
     public function create($payloads)
     {
         try {
-            if (!is_null($this->guardForeignKey)) {
+            if (! is_null($this->guardForeignKey)) {
                 $payloads[$this->guardForeignKey] = $this->userID();
             }
 
@@ -179,6 +177,7 @@ class BaseService implements BaseContract
             return $model->fresh();
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -189,9 +188,11 @@ class BaseService implements BaseContract
             DB::beginTransaction();
             $model = $this->model->insert($payloads);
             DB::commit();
+
             return true;
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -199,14 +200,14 @@ class BaseService implements BaseContract
     /**
      * Update item from resource.
      *
-     * @param mixed $id
-     * @param mixed $payloads
+     * @param  mixed  $id
+     * @param  mixed  $payloads
      * @return Exception|\Illuminate\Database\Eloquent\Collection
      */
     public function update($id, $payloads)
     {
         try {
-            if (!is_null($this->guardForeignKey)) {
+            if (! is_null($this->guardForeignKey)) {
                 $payloads[$this->guardForeignKey] = $this->userID();
             }
 
@@ -232,6 +233,7 @@ class BaseService implements BaseContract
             return $this->model->find($id);
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -239,7 +241,6 @@ class BaseService implements BaseContract
     /**
      * Destroy item from resource.
      *
-     * @param $id
      * @return mixed
      */
     public function destroy($id)
@@ -247,7 +248,7 @@ class BaseService implements BaseContract
         try {
             DB::beginTransaction();
             $model = $this->model
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->where($this->guardForeignKey, $this->userID());
                 })
                 ->findOrFail($id)
@@ -257,6 +258,7 @@ class BaseService implements BaseContract
             return $model;
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -264,22 +266,21 @@ class BaseService implements BaseContract
     /**
      * Get items with certain conditions.
      *
-     * @param mixed $conditions
-     * @param mixed $allowedFilters
-     * @param mixed $allowedSorts
-     * @param bool|null $withPaginate
+     * @param  mixed  $conditions
+     * @param  mixed  $allowedFilters
+     * @param  mixed  $allowedSorts
      * @return mixed
      */
     public function getWithCondition(
         $conditions,
         $allowedFilters,
         $allowedSorts,
-        bool|null $withPaginate = null,
+        ?bool $withPaginate = null,
         $relation = [],
         string $orderColumn = 'id',
         string $orderPosition = 'asc',
-        int $perPage  = 10,
-    ){
+        int $perPage = 10,
+    ) {
         try {
             $model = QueryBuilder::for($this->model::class);
 
@@ -292,14 +293,18 @@ class BaseService implements BaseContract
             $model->allowedFilters($allowedFilters)
                 ->allowedSorts($allowedSorts)
                 ->with(empty($relation) ? $this->relation : $relation)
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->paginate()->appends(request()->query());
                 })
                 ->orderBy($orderColumn, $orderPosition)
                 ->latest();
 
-            if (is_null($withPaginate)) $withPaginate = config('service-contract.default_paginated');
-            if (!$withPaginate) return $model->get();
+            if (is_null($withPaginate)) {
+                $withPaginate = config('service-contract.default_paginated');
+            }
+            if (! $withPaginate) {
+                return $model->get();
+            }
 
             $result = $model->paginate($this->resolvePerPage($perPage))
                 ->appends(request()->query());
@@ -310,6 +315,7 @@ class BaseService implements BaseContract
             // Add order_no to each item
             $items = collect($result->items())->map(function ($item, $index) use ($startOrderNo) {
                 $item->order_no = $startOrderNo + $index;
+
                 return $item;
             })->all();
 
@@ -329,8 +335,6 @@ class BaseService implements BaseContract
     /**
      * Update items with certain conditions.
      *
-     * @param $conditions
-     * @param $payloads
      * @return mixed
      */
     public function updateWithCondition($conditions, $payloads)
@@ -344,6 +348,7 @@ class BaseService implements BaseContract
             return $model->first();
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -351,7 +356,6 @@ class BaseService implements BaseContract
     /**
      * Bulk delete items based on an array of IDs.
      *
-     * @param array $ids
      * @return bool|Exception
      */
     public function bulkDeleteByIds(array $ids)
@@ -365,6 +369,7 @@ class BaseService implements BaseContract
             return $deleted > 0;
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -372,16 +377,15 @@ class BaseService implements BaseContract
     /**
      * Bulk update items based on an array of IDs.
      *
-     * @param array $ids
      * @return bool|Exception
      */
-    public function bulkUpdate(array $ids, $params) 
+    public function bulkUpdate(array $ids, $params)
     {
         try {
             DB::beginTransaction();
 
             $model = $this->model
-                ->when(!is_null($this->guardForeignKey), function ($query) {
+                ->when(! is_null($this->guardForeignKey), function ($query) {
                     $query->where($this->guardForeignKey, $this->userID());
                 })
                 ->whereIn('id', $ids);
@@ -393,6 +397,7 @@ class BaseService implements BaseContract
             return $model;
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }

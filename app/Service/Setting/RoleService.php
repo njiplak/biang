@@ -31,6 +31,7 @@ class RoleService extends BaseService implements RoleContract
             return $model->fresh($this->relation);
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }
@@ -50,6 +51,7 @@ class RoleService extends BaseService implements RoleContract
             return $model->fresh($this->relation);
         } catch (Exception $e) {
             DB::rollBack();
+
             return $e;
         }
     }

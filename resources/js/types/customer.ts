@@ -97,6 +97,32 @@ export type CustomerInvoice = {
     hosted_url: string | null;
 };
 
+/**
+ * One milestone email. The row is per milestone, not per recipient - that
+ * uniqueness is what stops a duplicate charge warning - so there is no
+ * "delivered to" here. CustomerOverview.billing_recipients is the other half.
+ */
+export type CustomerNotification = {
+    id: number;
+    /** The raw key, e.g. `payment_failed_reminder_7d`. */
+    type: string;
+    /** Humanised; falls back to the key itself for the dynamic reminder types. */
+    label: string;
+    channel: string;
+    sent_at: string | null;
+};
+
+export type CustomerUsageRecord = {
+    id: number;
+    feature: string;
+    quantity: number;
+    occurred_at: string | null;
+    is_reported: boolean;
+    reported_at: string | null;
+    /** Section 8: the id to quote back when a charge is disputed. */
+    dodo_event_id: string | null;
+};
+
 export type PlanOption = {
     price_id: number;
     label: string;
@@ -118,6 +144,8 @@ export type CustomerOverview = {
     // them up front. Limits, overrides and invoices are tables that load
     // themselves, so sending them here too would be doing the work twice.
     members: CustomerMember[];
+    /** Who a billing email would reach today - not a record of who received one. */
+    billing_recipients: string[];
     plans: PlanOption[];
     features: FeatureOption[];
 };
@@ -140,8 +168,10 @@ export type RevenueSummary = {
     trials: {
         running: number;
         started_total: number;
+        /** Trials that have run out, so the denominator conversion is measured over. */
+        ended_total: number;
         converted_total: number;
-        /** Null means nobody has started a trial yet, which is not 0%. */
+        /** Null means no trial has ended yet, which is not 0%. */
         conversion_rate: number | null;
     };
     churn: {
@@ -150,4 +180,29 @@ export type RevenueSummary = {
         rate: number | null;
     };
     plans: { plan: string; customers: number; mrr_minor: number }[];
+    /** Section 15's numbers over time, oldest first. Every month is present. */
+    trends: RevenueMonth[];
+    recovery: {
+        months: number;
+        resolved: number;
+        recovered: number;
+        /** Null while no episode has closed - not 0%. */
+        rate: number | null;
+    };
+};
+
+export type RevenueMonth = {
+    /** `2026-09`, the bucket key. */
+    month: string;
+    /** `Sep 26`, for an axis. */
+    label: string;
+    signups_users: number;
+    signups_workspaces: number;
+    /** Trials whose 14 days ran out in this month - the cohort that could convert. */
+    trials_ended: number;
+    trials_converted: number;
+    /** Null when no trial ended this month, which is not the same as 0%. */
+    conversion_rate: number | null;
+    churn_voluntary: number;
+    churn_involuntary: number;
 };

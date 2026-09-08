@@ -3,6 +3,7 @@
 use App\Models\AdminUser;
 use App\Models\User;
 use Database\Seeders\AdminRoleSeeder;
+use Spatie\Permission\Models\Permission;
 
 beforeEach(function () {
     $this->withoutVite();
@@ -24,7 +25,6 @@ it('keeps a signed in customer out of every settings screen', function (string $
     '/admin/setting/setting',
     '/admin/setting/role',
     '/admin/setting/permission',
-    '/admin/setting/user',
 ]);
 
 it('lets a super-admin into the console', function () {
@@ -54,6 +54,27 @@ it('does not dump customers into the console after login', function () {
 
     // hitting a guest-only page while signed in should not land on /admin
     $this->actingAs($user)->get(route('login'))->assertRedirect(route('dashboard', absolute: false));
+});
+
+/*
+ * A starter-kit CRUD over the customer `users` table: it assigned spatie roles
+ * that decide nothing for a customer - section 2 answers that per workspace,
+ * from WorkspaceRole - and offered create and delete straight past signup and
+ * past the retention path in PurgeClosedWorkspaces. Removed rather than hidden,
+ * because a route nothing links to is still a route.
+ *
+ * The person-level view support actually needs is still owed, and is not this.
+ */
+it('no longer serves the starter-kit customer CRUD', function () {
+    $admin = AdminUser::factory()->create();
+    $admin->assignRole('super-admin');
+
+    $this->actingAs($admin, 'admin')->get('/admin/setting/user')->assertNotFound();
+});
+
+it('leaves no user permission behind to grant', function () {
+    expect(Permission::where('guard_name', 'admin')->where('name', 'LIKE', 'user.%')->exists())
+        ->toBeFalse();
 });
 
 /*

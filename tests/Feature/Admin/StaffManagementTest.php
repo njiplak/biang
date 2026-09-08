@@ -5,7 +5,9 @@ use App\Exceptions\Domain\StaffLockout;
 use App\Models\AdminUser;
 use App\Models\User;
 use Database\Seeders\AdminRoleSeeder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use PragmaRX\Google2FA\Google2FA;
 
 /*
  * Section 3: platform staff on their own guard, with runtime-editable roles.
@@ -256,4 +258,74 @@ it('keeps customers out entirely', function () {
     $this->actingAs(User::factory()->create())
         ->get(route('admin.staff.index'))
         ->assertRedirect(route('admin.login'));
+});
+
+// --------------------------------------------------------- live sessions
+
+/**
+ * A real staff session: password, then the code. Both halves matter here -
+ * the point of these tests is the session that exists AFTERWARDS, and one
+ * established by actingAs() is never written to the session at all, so the
+ * guard would have nothing to re-resolve from.
+ */
+function signInAsSupport(App\Models\AdminUser $admin): void
+{
+    $admin->update(['password' => Hash::make('still-known')]);
+
+    test()->post(route('admin.attempt'), [
+        'email' => $admin->email,
+        'password' => 'still-known',
+    ])->assertRedirect(route('admin.two-factor.challenge'));
+
+    test()->post(route('admin.two-factor.challenge.store'), [
+        'code' => app(Google2FA::class)->getCurrentOtp($admin->two_factor_secret),
+    ])->assertRedirect(route('admin.dashboard'));
+}
+
+/*
+ * Deactivating is the offboarding path, and `is_active` was only ever checked
+ * while proving credentials - which stops the next LOGIN and does nothing about
+ * the session already open in the leaver's browser.
+ *
+ * Auth::forgetGuards() between the requests is load-bearing, not tidying. The
+ * test process keeps one container, so the guard holds the AdminUser instance
+ * it resolved at login and never reads the row again; production resolves it
+ * from the session on every request. Without this the test passes while
+ * production leaks, which is exactly the bug it is here to catch.
+ */
+it('throws a deactivated staff member out of a session they already hold', function () {
+    signInAsSupport($this->support);
+
+    $this->support->update(['is_active' => false]);
+    Auth::forgetGuards();
+
+    $this->get(route('admin.dashboard'))->assertRedirect(route('admin.login'));
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
+});
+
+// The console's tables fetch as JSON, where a redirect reads as an empty table.
+it('closes the door on a deactivated staff member fetching json', function () {
+    signInAsSupport($this->support);
+
+    $this->support->update(['is_active' => false]);
+    Auth::forgetGuards();
+
+    $this->getJson(route('admin.customer.fetch'))->assertStatus(401);
+});
+
+/*
+ * Offboarding never had the hole: the row is soft-deleted, and the model's
+ * SoftDeletes scope means the guard cannot resolve it at all. Pinned so that
+ * removing SoftDeletes from AdminUser does not quietly reopen it.
+ */
+it('throws an offboarded staff member out of a session they already hold', function () {
+    signInAsSupport($this->support);
+
+    $this->staff->offboard($this->support, $this->super);
+    Auth::forgetGuards();
+
+    $this->get(route('admin.dashboard'))->assertRedirect(route('admin.login'));
+
+    expect(auth()->guard('admin')->check())->toBeFalse();
 });

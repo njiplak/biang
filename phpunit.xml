@@ -18,6 +18,15 @@
         </include>
     </source>
     <php>
+        <!--
+            The suite inherited PHP's 128M default, and outgrew it: the whole
+            run shares one process, and the export tests build an xlsx in
+            memory in 16M chunks. Exhaustion surfaced as a fatal in whichever
+            test happened to be running at the time, which points at the
+            innocent one - so this is declared here rather than left to
+            whatever each machine and CI image happens to set.
+        -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

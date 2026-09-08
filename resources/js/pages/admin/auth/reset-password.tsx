@@ -1,23 +1,36 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 /**
- * Staff login. Deliberately separate from the customer login: a customer
- * account can never authenticate here, and this form never links across to it.
+ * The console asks for two factors, so a new password lands back on the login
+ * rather than signing anybody in - the second factor is still owed.
  */
-export default function AdminLogin({ status }: { status?: string }) {
-    const form = useForm({ email: '', password: '', remember: false });
+export default function AdminResetPassword({
+    token,
+    email,
+}: {
+    token: string;
+    email: string;
+}) {
+    const form = useForm({
+        token,
+        email,
+        password: '',
+        password_confirmation: '',
+    });
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
-        form.post('/admin/login', { onFinish: () => form.reset('password') });
+        form.post('/admin/reset-password', {
+            onFinish: () => form.reset('password', 'password_confirmation'),
+        });
     };
 
     return (
         <div className="flex min-h-svh items-center justify-center bg-background p-6">
-            <Head title="Staff sign in" />
+            <Head title="Choose a new password" />
 
             <form
                 onSubmit={submit}
@@ -25,16 +38,12 @@ export default function AdminLogin({ status }: { status?: string }) {
             >
                 <div className="flex flex-col gap-1">
                     <h1 className="text-lg font-semibold tracking-tight">
-                        Staff console
+                        Choose a new password
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                        Internal access only.
+                        You will sign in again afterwards.
                     </p>
                 </div>
-
-                {status && (
-                    <p className="text-sm text-muted-foreground">{status}</p>
-                )}
 
                 <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
@@ -54,16 +63,17 @@ export default function AdminLogin({ status }: { status?: string }) {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password">New password</Label>
                     <Input
                         id="password"
                         type="password"
-                        autoComplete="current-password"
+                        autoComplete="new-password"
                         value={form.data.password}
                         onChange={(e) =>
                             form.setData('password', e.target.value)
                         }
                         required
+                        autoFocus
                     />
                     {form.errors.password && (
                         <p className="text-xs text-destructive">
@@ -72,16 +82,28 @@ export default function AdminLogin({ status }: { status?: string }) {
                     )}
                 </div>
 
-                <Button type="submit" disabled={form.processing}>
-                    Sign in
-                </Button>
+                <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="password_confirmation">
+                        Confirm password
+                    </Label>
+                    <Input
+                        id="password_confirmation"
+                        type="password"
+                        autoComplete="new-password"
+                        value={form.data.password_confirmation}
+                        onChange={(e) =>
+                            form.setData(
+                                'password_confirmation',
+                                e.target.value,
+                            )
+                        }
+                        required
+                    />
+                </div>
 
-                <Link
-                    href="/admin/forgot-password"
-                    className="text-center text-sm underline underline-offset-4"
-                >
-                    Forgot your password?
-                </Link>
+                <Button type="submit" disabled={form.processing}>
+                    Save and sign in
+                </Button>
             </form>
         </div>
     );

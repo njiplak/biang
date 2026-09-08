@@ -15,7 +15,10 @@ interface AuthContract
     public function login(array $credentials);
 
     public function completeLogin(Authenticatable $user, bool $remember = false): void;
+
     public function register(array $payloads, $assignRole = []);
+
     public function logout();
+
     public function update($id, array $payloads, $assignRole = []);
 }

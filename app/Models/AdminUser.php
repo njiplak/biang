@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\TwoFactorAuthenticatable;
+use App\Notifications\AdminPasswordResetNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -59,6 +60,15 @@ class AdminUser extends Authenticatable
         static::creating(function (self $admin) {
             $admin->ulid ??= (string) Str::ulid();
         });
+    }
+
+    /**
+     * The default sends a link to the customer reset form, which checks tokens
+     * against the `users` broker - the wrong table for a staff account.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new AdminPasswordResetNotification($token));
     }
 
     public function impersonationSessions()

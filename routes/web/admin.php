@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminNewPasswordController;
+use App\Http\Controllers\Admin\AdminPasswordResetLinkController;
 use App\Http\Controllers\Admin\AdminTwoFactorChallengeController;
 use App\Http\Controllers\Admin\AdminTwoFactorController;
 use App\Http\Controllers\Admin\AnnouncementController;
@@ -29,13 +31,28 @@ Route::prefix('admin')->as('admin.')->group(function () {
         Route::get('login', [AdminAuthController::class, 'login'])->name('login');
         Route::post('login', [AdminAuthController::class, 'attempt'])->name('attempt');
 
+        /*
+         * Its own broker and its own token table (config/auth.php), so a link
+         * minted here can never be spent on a customer account or the reverse.
+         *
+         * Throttled for the same reason the login is: this endpoint takes an
+         * address and tells you nothing, but it also sends mail, and an
+         * unthrottled one on the staff console is somebody else's inbox.
+         */
+        Route::get('forgot-password', [AdminPasswordResetLinkController::class, 'create'])->name('password.request');
+        Route::post('forgot-password', [AdminPasswordResetLinkController::class, 'store'])
+            ->middleware('throttle:6,1')->name('password.email');
+        Route::get('reset-password/{token}', [AdminNewPasswordController::class, 'create'])->name('password.reset');
+        Route::post('reset-password', [AdminNewPasswordController::class, 'store'])
+            ->middleware('throttle:6,1')->name('password.update');
+
         // The second half of a staff login: password proved, no session yet.
         Route::get('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'show'])->name('two-factor.challenge');
         Route::post('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'store'])->name('two-factor.challenge.store');
         Route::delete('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'destroy'])->name('two-factor.challenge.abandon');
     });
 
-    Route::middleware('auth:admin')->group(function () {
+    Route::middleware(['auth:admin', 'admin.active', 'admin.2fa'])->group(function () {
         Route::post('logout', [AdminAuthController::class, 'logout'])->name('logout');
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 

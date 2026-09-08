@@ -4,15 +4,11 @@ import type { SharedData } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type Props = {
-    must_verify_email: boolean;
-};
-
 /**
  * Section 2: one person, many workspaces, a different job in each - so this is
  * the switcher, and it reads across every workspace they belong to.
  */
-export default function Dashboard({ must_verify_email }: Props) {
+export default function Dashboard() {
     // Same list the switcher uses - one source, shared on every page.
     const { tenancy } = usePage<SharedData>().props;
     const workspaces = tenancy?.available ?? [];
@@ -29,23 +25,6 @@ export default function Dashboard({ must_verify_email }: Props) {
             <Head title="Dashboard" />
 
             <div className="flex flex-col gap-6 p-6">
-                {/* Section 5: verification sits between signing up and naming a
-                    workspace, and the routes now enforce that order. So this
-                    says what it BLOCKS - a notice that reads as optional next
-                    to a form that will bounce them is worse than no notice. */}
-                {must_verify_email && (
-                    <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                        Confirm your email address to create a workspace or
-                        invite anyone.{' '}
-                        <Link
-                            href="/verify-email"
-                            className="underline underline-offset-4"
-                        >
-                            Resend the link
-                        </Link>
-                    </p>
-                )}
-
                 <h1 className="text-xl font-semibold tracking-tight">
                     Your workspaces
                 </h1>
@@ -112,7 +91,6 @@ export default function Dashboard({ must_verify_email }: Props) {
                             }
                             placeholder="New workspace name"
                             className="w-72"
-                            disabled={must_verify_email}
                         />
                         {form.errors.name && (
                             <p className="text-xs text-destructive">
@@ -122,10 +100,7 @@ export default function Dashboard({ must_verify_email }: Props) {
                     </div>
                     {/* Disabled rather than hidden: the point is that this is
                         waiting on one step, not that it does not exist. */}
-                    <Button
-                        type="submit"
-                        disabled={form.processing || must_verify_email}
-                    >
+                    <Button type="submit" disabled={form.processing}>
                         Create workspace
                     </Button>
                 </form>

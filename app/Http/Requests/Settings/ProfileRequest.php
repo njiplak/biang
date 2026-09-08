@@ -19,6 +19,14 @@ class ProfileRequest extends FormRequest
             'email' => [
                 'required', 'string', 'email', 'max:255',
                 Rule::unique('users', 'email')->ignore($this->user()->id),
+                /*
+                 * Also refuse an address somebody else is already waiting to
+                 * confirm. Without this the second person is told everything is
+                 * fine, gets a confirmation mail, and only discovers the address
+                 * was taken when their link fails - by which point they have
+                 * been carrying a pending change for a week.
+                 */
+                Rule::unique('users', 'pending_email')->ignore($this->user()->id),
             ],
         ];
     }

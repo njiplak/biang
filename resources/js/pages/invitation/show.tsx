@@ -61,8 +61,13 @@ export default function InvitationShow({
                         <Button asChild>
                             <Link href="/auth/login">Sign in</Link>
                         </Button>
+                        {/* The token travels with them: signing up with the
+                            address it was sent to is what proves that address,
+                            and a bare /auth/register throws it away. */}
                         <Button variant="outline" asChild>
-                            <Link href="/auth/register">Create an account</Link>
+                            <Link href={`/auth/register?invitation=${token}`}>
+                                Create an account
+                            </Link>
                         </Button>
                     </>
                 )}

@@ -14,11 +14,18 @@ type FormData = {
     password_confirmation: string;
 };
 
-export default function Register() {
+type Props = {
+    invitedEmail?: string | null;
+    invitedTo?: string | null;
+};
+
+export default function Register({ invitedEmail, invitedTo }: Props) {
     const { data, setData, post, processing, errors, reset } =
         useForm<FormData>({
             name: '',
-            email: '',
+            // Signing up with the address the invitation was sent to is what
+            // proves it, so it is prefilled rather than left to be retyped.
+            email: invitedEmail ?? '',
             password: '',
             password_confirmation: '',
         });
@@ -32,10 +39,23 @@ export default function Register() {
 
     return (
         <AuthLayout
-            title="Create your account"
-            description="No card required to start"
+            title={invitedTo ? `Join ${invitedTo}` : 'Create your account'}
+            description={
+                invitedTo
+                    ? 'Create your account to accept the invitation'
+                    : 'No card required to start'
+            }
         >
             <Head title="Sign up" />
+
+            {invitedEmail && (
+                <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Sign up with{' '}
+                    <span className="font-medium">{invitedEmail}</span> and you
+                    will not need to confirm your address - we already sent this
+                    invitation there.
+                </p>
+            )}
 
             <form onSubmit={onSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">

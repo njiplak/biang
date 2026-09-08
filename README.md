@@ -7,14 +7,6 @@ on webhook ate the first time
 beginning the customer either during registration or whatsoever is that should pick a plan and type their credit card, 
 so we know they want to purchase the product itself
 
-
-feedback on customer auth : 
-
-- on login page customer add link to register
-- when they are register, please add check your email page so this is blocked meaning the customer should verify email first then
-can login -> so no need to add button re-send email on dashboard, remove that, that is silly ui
-- where is the forgot password, otp etc like that? i did not see it?
-
 feedback on customer workspace : 
 
 - instead on show it on page which is dashboard, just make add new workspace on a modal instead

@@ -3,16 +3,11 @@
 namespace App\Service;
 
 use App\Contract\AuthContract;
-use App\Mail\OTPMail;
-use App\Models\PasswordResetToken;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use Exception;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Mail;
 
 class AuthService implements AuthContract
 {
@@ -50,38 +45,56 @@ class AuthService implements AuthContract
     }
 
     /**
-     * Login to app.
+     * Checks credentials and returns the USER, without starting a session.
      *
-     * @param array $credentials
+     * It used to call Auth::attempt(), which signs the person in as a side
+     * effect of being right about the password. That leaves no room for a second
+     * factor: by the time the caller could ask whether one is required, the
+     * session already exists. Completing the login is completeLogin()'s job now,
+     * and the caller decides whether it has earned it.
+     *
+     * One failure message for every reason. Reporting "Email is not registered."
+     * separately from "Incorrect password." let anyone with the login form
+     * confirm which of our customers' addresses exist, one guess at a time.
+     *
+     * What this does NOT fix: an unknown address still answers faster, because
+     * a missing row returns before bcrypt is ever reached. Closing that needs a
+     * dummy hash on the miss path. Until then the throttle in the controllers is
+     * what bounds it.
      */
     public function login(array $credentials)
     {
         try {
-            $userQuery = $this->model::query()->where($this->username, $credentials[$this->username]);
-            $user = $userQuery->first();
+            $provider = Auth::guard($this->guard)->getProvider();
 
-            if (!$userQuery->exists()) {
-                return new Exception('Email is not registered.');
+            $user = $provider->retrieveByCredentials($this->lookupCredentials($credentials));
+
+            if ($user === null || ! $provider->validateCredentials($user, ['password' => $credentials['password']])) {
+                return new Exception('These credentials do not match our records.');
             }
 
-            if (!Hash::check($credentials["password"], $user->password)) {
-                return new Exception('Incorrect password.');
-            }
-
-            $remember = isset($credentials['remember']) && $credentials['remember'] === true;
-            $loginCredentials = [
-                $this->username => $credentials[$this->username],
-                'password' => $credentials['password']
-            ];
-
-            if (!$login = Auth::guard($this->guard)->attempt($loginCredentials, $remember)) {
-                return new Exception('Invalid email or password.');
-            }
-
-            return $login;
+            return $user;
         } catch (Exception $exception) {
             return $exception;
         }
+    }
+
+    /**
+     * Which row is even allowed to try. Extra terms here are part of the
+     * credential check rather than a test after the fact - see AdminAuthService,
+     * where a deactivated staff member must fail the login itself.
+     *
+     * @return array<string, mixed>
+     */
+    protected function lookupCredentials(array $credentials): array
+    {
+        return [$this->username => $credentials[$this->username]];
+    }
+
+    /** Starts the session. Only called once every factor has been satisfied. */
+    public function completeLogin(Authenticatable $user, bool $remember = false): void
+    {
+        Auth::guard($this->guard)->login($user, $remember);
     }
 
     /**
@@ -147,118 +160,4 @@ class AuthService implements AuthContract
             return $exception;
         }
     }
-
-    /**
-     * Send OTP code for validate email.
-     *
-     * @param array $payloads
-     * @return bool|Exception
-     */
-    public function sendOTP(array $payloads): array|Exception
-    {
-        try {
-            $randomNumber = rand(0, 999999);
-            $otp = str_pad($randomNumber, 6, '0', STR_PAD_LEFT);
-
-            $user = $this->model::query()
-                ->where('email', $payloads['email'])
-                ->first();
-
-            if (!$user)
-                return new Exception('Email not register.');
-
-            DB::beginTransaction();
-
-            PasswordResetToken::updateOrCreate(
-                ['email' => $payloads['email']],
-                [
-                    'otp' => Hash::make($otp),
-                    'otp_expired' => Carbon::now()->addMinutes(config('service-contract.auth.otp_expired'))
-                ]
-            );
-
-            DB::commit();
-
-            Mail::to($payloads['email'])->send(new OTPMail($otp));
-
-            return [
-                'email' => $payloads['email']
-            ];
-        } catch (Exception $exception) {
-            DB::rollBack();
-            return $exception;
-        }
-    }
-
-    /**
-     * Send OTP code for validate email.
-     *
-     * @param array $payloads
-     * @return array|Exception
-     */
-    public function validateOTP(array $payloads): array|Exception
-    {
-        try {
-            $token = Str::random(64);
-
-            DB::beginTransaction();
-
-            $reset = PasswordResetToken::query()
-                ->where('email', $payloads['email'])
-                ->first();
-
-            if (!Hash::check($payloads['otp'], $reset->otp)) {
-                return new Exception('OTP is invalid.');
-            }
-
-            $reset->update([
-                'token' => Hash::make($token),
-                'token_expired' => Carbon::now()->addMinutes(config('service-contract.auth.token_expired'))
-            ]);
-
-            DB::commit();
-
-            return [
-                'email' => $payloads['email'],
-                'token' => $token
-            ];
-        } catch (Exception $exception) {
-            DB::rollBack();
-            return $exception;
-        }
-    }
-
-    /**
-     * Validate OTP for resert password.
-     *
-     * @param array $payloads
-     * @return bool|Exception
-     */
-    public function resetPassword(array $payloads): bool|Exception
-    {
-        try {
-            DB::beginTransaction();
-
-            $reset = PasswordResetToken::query()
-                ->where('email', $payloads['email'])
-                ->first();
-
-            if (!Hash::check($payloads['token'], $reset->token)) {
-                return new Exception('OTP is invalid.');
-            }
-
-            $this->model::where('email', $payloads['email'])
-                ->update(['password' => Hash::make($payloads['password'])]);
-
-            $reset->delete();
-
-            DB::commit();
-
-            return true;
-        } catch (Exception $exception) {
-            DB::rollBack();
-            return $exception;
-        }
-    }
-
 }

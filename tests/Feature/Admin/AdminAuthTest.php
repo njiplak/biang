@@ -122,8 +122,8 @@ it('signs a staff member out without touching the customer session', function ()
         ->and(auth()->guard('web')->check())->toBeTrue();
 });
 
-// The existing customer login never calls its own rate limiter. A brand new
-// admin login must not repeat that.
+// Both logins share LoginRequest's limiter; the customer side is covered in
+// tests/Feature/Auth/LoginTest.php.
 it('throttles repeated failed admin logins', function () {
     foreach (range(1, 5) as $ignored) {
         $this->post(route('admin.attempt'), [

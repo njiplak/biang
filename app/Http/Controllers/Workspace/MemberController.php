@@ -78,11 +78,6 @@ class MemberController extends Controller
             // the priced offer. Null on the free tier, where the answer is an
             // upgrade rather than an add-on (section 12).
             'seat_offer' => $this->seatOffer($workspace),
-            // Inviting is gated on a verified address (routes/web/workspace.php),
-            // so the form has to know - otherwise someone who has just changed
-            // their email types out an invitation and is bounced to the notice
-            // page with no idea why.
-            'must_verify_email' => ! request()->user()->hasVerifiedEmail(),
         ]);
     }
 

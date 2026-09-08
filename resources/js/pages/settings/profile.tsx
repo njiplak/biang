@@ -8,9 +8,17 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import type { SharedData } from '@/types';
 
-type Props = { mustVerifyEmail: boolean; status?: string };
+type Props = {
+    mustVerifyEmail: boolean;
+    pendingEmail: string | null;
+    status?: string;
+};
 
-export default function Profile({ mustVerifyEmail, status }: Props) {
+export default function Profile({
+    mustVerifyEmail,
+    pendingEmail,
+    status,
+}: Props) {
     const { auth } = usePage<SharedData>().props;
     const form = useForm({
         name: auth.user?.name ?? '',
@@ -34,6 +42,12 @@ export default function Profile({ mustVerifyEmail, status }: Props) {
                         className="text-muted-foreground underline underline-offset-4"
                     >
                         Password
+                    </Link>
+                    <Link
+                        href="/settings/two-factor"
+                        className="text-muted-foreground underline underline-offset-4"
+                    >
+                        Two-factor
                     </Link>
                 </div>
 
@@ -79,12 +93,43 @@ export default function Profile({ mustVerifyEmail, status }: Props) {
                                 className="max-w-sm"
                             />
                             <InputError message={form.errors.email} />
-                            {/* Changing the address invalidates the proof it is yours. */}
+                            {/* The account keeps this address until the new one
+                                is confirmed, so a typo here costs nothing. */}
                             <p className="text-xs text-muted-foreground">
-                                Changing this means confirming the new address
-                                again.
+                                We will email the new address to confirm it.
+                                Until then your account keeps using this one.
                             </p>
                         </div>
+
+                        {pendingEmail && (
+                            <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                                <p>
+                                    Waiting for confirmation at{' '}
+                                    <span className="font-medium">
+                                        {pendingEmail}
+                                    </span>
+                                    . Your account still uses{' '}
+                                    <span className="font-medium">
+                                        {auth.user?.email}
+                                    </span>
+                                    .
+                                </p>
+                                <div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            router.delete(
+                                                '/settings/email/pending',
+                                            )
+                                        }
+                                    >
+                                        Cancel the change
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
 
                         {mustVerifyEmail && (
                             <p className="text-sm text-muted-foreground">

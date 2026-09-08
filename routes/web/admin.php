@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminTwoFactorChallengeController;
+use App\Http\Controllers\Admin\AdminTwoFactorController;
 use App\Http\Controllers\Admin\AnnouncementController;
 use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BillingOpsController;
@@ -25,11 +27,28 @@ Route::prefix('admin')->as('admin.')->group(function () {
     Route::middleware('guest:admin')->group(function () {
         Route::get('login', [AdminAuthController::class, 'login'])->name('login');
         Route::post('login', [AdminAuthController::class, 'attempt'])->name('attempt');
+
+        // The second half of a staff login: password proved, no session yet.
+        Route::get('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'show'])->name('two-factor.challenge');
+        Route::post('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'store'])->name('two-factor.challenge.store');
+        Route::delete('two-factor-challenge', [AdminTwoFactorChallengeController::class, 'destroy'])->name('two-factor.challenge.abandon');
     });
 
     Route::middleware('auth:admin')->group(function () {
         Route::post('logout', [AdminAuthController::class, 'logout'])->name('logout');
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+        /*
+         * Staff enrolment. No `permission:` gate - protecting your OWN account
+         * is not a privileged action, and gating it would leave the staff
+         * without that permission as the only ones who cannot.
+         */
+        Route::get('two-factor', [AdminTwoFactorController::class, 'edit'])->name('two-factor.edit');
+        Route::post('two-factor', [AdminTwoFactorController::class, 'store'])->name('two-factor.store');
+        Route::post('two-factor/confirm', [AdminTwoFactorController::class, 'confirm'])
+            ->middleware('throttle:6,1')->name('two-factor.confirm');
+        Route::post('two-factor/recovery-codes', [AdminTwoFactorController::class, 'regenerate'])->name('two-factor.recovery-codes');
+        Route::delete('two-factor', [AdminTwoFactorController::class, 'destroy'])->name('two-factor.destroy');
 
         /*
          * Deliberately outside the `customer.view` gate. This is the way OUT of

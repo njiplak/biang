@@ -7,8 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AuthLayout from '@/layouts/auth-layout';
-import { FormResponse } from '@/lib/constant';
-import { attempt } from '@/routes';
+import { attempt, register } from '@/routes';
+import password from '@/routes/password';
 
 type FormData = {
     email: string;
@@ -17,15 +17,18 @@ type FormData = {
 };
 
 export default function Login() {
-    const { data, setData, post, processing, errors } = useForm<FormData>({
-        email: '',
-        password: '',
-        remember: false,
-    });
+    const { data, setData, post, processing, errors, reset } =
+        useForm<FormData>({
+            email: '',
+            password: '',
+            remember: false,
+        });
 
     const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        post(attempt().url, FormResponse);
+        // No toast here: a failed sign-in has to stay on screen next to the
+        // field it belongs to, and the throttle message is reported on `email`.
+        post(attempt().url, { onFinish: () => reset('password') });
     };
 
     return (
@@ -44,7 +47,7 @@ export default function Login() {
                         id="email"
                         type="email"
                         required
-                        tabIndex={2}
+                        autoFocus
                         autoComplete="email"
                         value={data.email}
                         onChange={(e) => setData('email', e.target.value)}
@@ -55,11 +58,18 @@ export default function Login() {
                     <InputError message={errors.email} />
                 </div>
                 <div className="flex flex-col">
-                    <Label htmlFor="password">Password</Label>
+                    <div className="flex items-center justify-between">
+                        <Label htmlFor="password">Password</Label>
+                        <Link
+                            href={password.request().url}
+                            className="text-sm underline underline-offset-4"
+                        >
+                            Forgot password?
+                        </Link>
+                    </div>
                     <PasswordInput
                         id="password"
                         required
-                        tabIndex={3}
                         autoComplete="current-password"
                         value={data.password}
                         onChange={(e) => setData('password', e.target.value)}
@@ -68,12 +78,7 @@ export default function Login() {
                     />
                     <InputError message={errors.password} />
                 </div>
-                <Button
-                    type="submit"
-                    className="w-full"
-                    tabIndex={5}
-                    disabled={processing}
-                >
+                <Button type="submit" className="w-full" disabled={processing}>
                     {processing && (
                         <LoaderCircle className="size-4 animate-spin" />
                     )}
@@ -90,6 +95,16 @@ export default function Login() {
                     />
                     <span>Remember me</span>
                 </Label>
+
+                <p className="text-center text-sm text-muted-foreground">
+                    Don't have an account?{' '}
+                    <Link
+                        href={register().url}
+                        className="underline underline-offset-4"
+                    >
+                        Sign up
+                    </Link>
+                </p>
             </form>
         </AuthLayout>
     );

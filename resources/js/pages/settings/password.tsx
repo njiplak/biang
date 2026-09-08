@@ -25,6 +25,12 @@ export default function PasswordSettings({ status }: { status?: string }) {
                         Profile
                     </Link>
                     <span className="font-medium">Password</span>
+                    <Link
+                        href="/settings/two-factor"
+                        className="text-muted-foreground underline underline-offset-4"
+                    >
+                        Two-factor
+                    </Link>
                 </div>
 
                 <section className="flex flex-col gap-4">

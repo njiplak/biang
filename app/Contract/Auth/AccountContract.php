@@ -11,8 +11,24 @@ use App\Models\User;
  */
 interface AccountContract
 {
-    /** @param  array{name: string, email: string}  $payload */
+    /**
+     * A changed email is parked on `pending_email`, not applied - the account
+     * keeps the address it has proved until the new one is confirmed.
+     *
+     * @param  array{name: string, email: string}  $payload
+     */
     public function updateProfile(User $user, array $payload): User;
+
+    /**
+     * Confirms the parked address, hash being sha1 of the address the link was
+     * issued for.
+     *
+     * @throws \App\Exceptions\Domain\EmailChangeNotPending
+     * @throws \App\Exceptions\Domain\EmailAlreadyTaken
+     */
+    public function confirmEmailChange(User $user, string $hash): User;
+
+    public function cancelEmailChange(User $user): User;
 
     public function changePassword(User $user, string $password): User;
 

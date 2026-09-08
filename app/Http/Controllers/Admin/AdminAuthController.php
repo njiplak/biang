@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Contract\Auth\AdminAuthContract;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
+use App\Support\PendingTwoFactor;
 use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,6 +42,18 @@ class AdminAuthController extends Controller
         }
 
         $request->clearRateLimiter();
+
+        $remember = (bool) ($request->validated()['remember'] ?? false);
+
+        // Staff reach every customer's data and can impersonate them, so the
+        // same rule applies here with more reason: password alone is not entry.
+        if ($result->hasTwoFactorEnabled()) {
+            PendingTwoFactor::remember($request, 'admin', $result->getKey(), $remember);
+
+            return redirect()->route('admin.two-factor.challenge');
+        }
+
+        $this->service->completeLogin($result, $remember);
         $request->session()->regenerate();
 
         // admin_users carries these two columns and nothing wrote them. Who was

@@ -20,6 +20,10 @@ class LoginRequest extends FormRequest
         return [
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+            // Both login forms have posted `remember` all along, but with no
+            // rule here validated() dropped it before any service saw it - so
+            // the checkbox rendered, submitted, and did nothing.
+            'remember' => ['sometimes', 'boolean'],
         ];
     }
 

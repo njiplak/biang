@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\UserAuthController;
+use App\Http\Controllers\Auth\UserTwoFactorChallengeController;
 use Illuminate\Support\Facades\Route;
 
 // The way IN. Guest-only, so a signed-in person cannot quietly re-login as
@@ -15,6 +16,17 @@ Route::group(['middleware' => 'guest', 'prefix' => 'auth'], function () {
     // links to it.
     Route::get('register', [RegisterController::class, 'create'])->name('register');
     Route::post('register', [RegisterController::class, 'store'])->name('register.store');
+
+    /*
+     * The second half of a login. Guest-only, like the first half: reaching it
+     * means the password passed but no session exists yet, and the note saying
+     * so lives in the session (App\Support\PendingTwoFactor) rather than in the
+     * URL - an id in a query string would let anyone skip straight to the code
+     * prompt for an account they only know the id of.
+     */
+    Route::get('two-factor-challenge', [UserTwoFactorChallengeController::class, 'show'])->name('two-factor.challenge');
+    Route::post('two-factor-challenge', [UserTwoFactorChallengeController::class, 'store'])->name('two-factor.challenge.store');
+    Route::delete('two-factor-challenge', [UserTwoFactorChallengeController::class, 'destroy'])->name('two-factor.challenge.abandon');
 });
 
 /*

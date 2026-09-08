@@ -16,7 +16,12 @@ class EmailVerificationController extends Controller
     {
         return $request->user()->hasVerifiedEmail()
             ? redirect()->intended(route('dashboard', absolute: false))
-            : Inertia::render('auth/verify-email', ['status' => $request->session()->get('status')]);
+            : Inertia::render('auth/verify-email', [
+                'status' => $request->session()->get('status'),
+                // Signing up now lands here, so this is where a mistyped
+                // address is caught - and it can only be caught if it is shown.
+                'email' => $request->user()->email,
+            ]);
     }
 
     /**

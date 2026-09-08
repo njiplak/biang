@@ -20,6 +20,10 @@ class ProfileController extends Controller
     {
         return Inertia::render('settings/profile', [
             'mustVerifyEmail' => ! $request->user()->hasVerifiedEmail(),
+            // The address they asked to move to and have not confirmed. Shown
+            // so a change that is waiting on an inbox they cannot reach is
+            // visible and cancellable, rather than silently stuck.
+            'pendingEmail' => $request->user()->pending_email,
             'status' => session('status'),
         ]);
     }

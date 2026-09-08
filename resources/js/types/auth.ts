@@ -4,6 +4,8 @@ export type User = {
     email: string;
     avatar?: string;
     email_verified_at: string | null;
+    // Parked address awaiting confirmation; the account still uses `email`.
+    pending_email: string | null;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;
@@ -22,13 +24,4 @@ export type Auth = {
     user: User | null;
     admin: AdminUser | null;
     permissions: string[];
-};
-
-export type TwoFactorSetupData = {
-    svg: string;
-    url: string;
-};
-
-export type TwoFactorSecretKey = {
-    secretKey: string;
 };

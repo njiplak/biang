@@ -14,6 +14,7 @@ use App\Contract\Admin\SchedulerHealthContract;
 use App\Contract\Admin\StaffContract;
 use App\Contract\Auth\AccountContract;
 use App\Contract\Auth\AdminAuthContract;
+use App\Contract\Auth\TwoFactorContract;
 use App\Contract\Auth\UserAuthContract;
 use App\Contract\AuthContract;
 use App\Contract\BaseContract;
@@ -46,6 +47,7 @@ use App\Service\Admin\SchedulerHealthService;
 use App\Service\Admin\StaffService;
 use App\Service\Auth\AccountService;
 use App\Service\Auth\AdminAuthService;
+use App\Service\Auth\TwoFactorService;
 use App\Service\Auth\UserAuthService;
 use App\Service\AuthService;
 use App\Service\BaseService;
@@ -77,6 +79,7 @@ class ContractProvider extends ServiceProvider
         UserAuthContract::class => UserAuthService::class,
         AdminAuthContract::class => AdminAuthService::class,
         AccountContract::class => AccountService::class,
+        TwoFactorContract::class => TwoFactorService::class,
 
         // Admin console
         AnnouncementContract::class => AnnouncementService::class,

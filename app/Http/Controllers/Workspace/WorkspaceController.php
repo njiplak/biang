@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Workspace;
 
+use App\Contract\Admin\AuditContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Workspace\WorkspaceContract;
 use App\Enums\BillingInterval;
@@ -31,6 +32,9 @@ class WorkspaceController extends Controller
     public function __construct(
         private readonly WorkspaceContract $service,
         private readonly PaymentGatewayContract $gateway,
+        // Section 10's permanent record, for the customer actions support is
+        // most often asked about. See MemberController for the reasoning.
+        private readonly AuditContract $audit,
     ) {}
 
     public function store(WorkspaceRequest $request): SymfonyResponse
@@ -130,6 +134,15 @@ class WorkspaceController extends Controller
             'workspace' => $workspace->only(['ulid', 'name', 'slug']),
             'can' => [
                 'rename' => Gate::allows('update', $workspace),
+                /*
+                 * `update` is role AND state, and the two need different
+                 * answers from the customer. Role first when both apply: an
+                 * ordinary member told to buy a plan is being sent to a page
+                 * their role cannot open.
+                 */
+                'rename_blocked_by' => Gate::allows('update', $workspace)
+                    ? null
+                    : (request()->user('web')?->roleIn($workspace)?->canManageMembers() === true ? 'state' : 'role'),
                 'transfer' => Gate::allows('transferOwnership', $workspace),
                 'close' => Gate::allows('delete', $workspace),
             ],
@@ -154,6 +167,10 @@ class WorkspaceController extends Controller
         Gate::authorize('delete', $workspace);
 
         $this->service->closeWorkspace($workspace);
+
+        // Closing stops billing and starts the retention clock, so "who closed
+        // this, and when" is the first question asked when somebody wants it back.
+        $this->audit->record('workspace.closed', $workspace, $workspace);
 
         return redirect()->route('dashboard');
     }
@@ -190,6 +207,10 @@ class WorkspaceController extends Controller
 
         $member = WorkspaceMember::findOrFail($request->validated('member_id'));
         $this->service->transferOwnership($workspace, $member);
+
+        // Ownership carries billing and the right to close, so this is the
+        // single most consequential thing a customer can do to a workspace.
+        $this->audit->record('workspace.ownership_transferred', $workspace, $member);
 
         return back();
     }

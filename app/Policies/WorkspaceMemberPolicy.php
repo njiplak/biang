@@ -38,14 +38,24 @@ class WorkspaceMemberPolicy
         return $actorRole->canManageMembers();
     }
 
-    /** Changing a membership's role. Demoting the last owner is the same problem. */
+    /**
+     * Changing a membership's role. Demoting the last owner is the same problem.
+     *
+     * Gated on the workspace being writable, unlike delete() above. Section 6
+     * says read-only means no writing and a role change is a write - it is not
+     * one of the escape hatches. Removing somebody frees a seat and is how a
+     * workspace gets back under its limit; transferring ownership is how the
+     * last owner leaves. Reshuffling roles fixes nothing, so it waits for a
+     * plan like renaming and inviting already do.
+     */
     public function update(User $user, WorkspaceMember $member): bool
     {
         if ($this->isLastOwner($member)) {
             return false;
         }
 
-        return $user->roleIn($member->workspace)?->canManageMembers() === true;
+        return $user->roleIn($member->workspace)?->canManageMembers() === true
+            && $member->workspace->canWrite();
     }
 
     /**

@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Building2,
     ChevronsUpDown,
+    FileText,
     LayoutDashboard,
     LogOut,
     Megaphone,
@@ -217,6 +218,19 @@ export default function AdminLayout({ children }: AppLayoutProps) {
                                         >
                                             <Megaphone />
                                             <span>Announcements</span>
+                                        </Link>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton
+                                        asChild
+                                        isActive={isMenuActive(
+                                            admin.page.index.url(),
+                                        )}
+                                    >
+                                        <Link href={admin.page.index.url()}>
+                                            <FileText />
+                                            <span>Pages</span>
                                         </Link>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>

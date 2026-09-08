@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             SettingSeeder::class,
+            PageSeeder::class,
             // staff RBAC before the staff account, so it can be given a role
             AdminRoleSeeder::class,
             AdminUserSeeder::class,

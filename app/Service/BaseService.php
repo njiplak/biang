@@ -36,6 +36,32 @@ class BaseService implements BaseContract
     }
 
     /**
+     * The largest page any table is allowed to ask for.
+     *
+     * Every list in the app is fed by all() or getWithCondition(), and both
+     * took `per_page` straight from the query string. `?per_page=1000000` was
+     * therefore one request away from loading a whole table into memory, and
+     * on the members feed it also multiplied the per-row policy checks.
+     * No screen offers more than 50.
+     */
+    protected const MAX_PER_PAGE = 100;
+
+    /**
+     * Clamp a caller- or request-supplied page size into something sane.
+     *
+     * Non-numeric input casts to 0, which would otherwise ask the paginator
+     * for an empty page rather than the default.
+     */
+    protected function resolvePerPage(mixed $perPage): int
+    {
+        $value = (int) $perPage;
+
+        return $value < 1
+            ? 10
+            : min($value, static::MAX_PER_PAGE);
+    }
+
+    /**
      * Get user id by guard name.
      *
      * @return int
@@ -80,7 +106,7 @@ class BaseService implements BaseContract
             if (is_null($withPaginate)) $withPaginate = config('service-contract.default_paginated');
             if (!$withPaginate) return $model->get();
 
-            $result = $model->paginate(request()->get('per_page', $perPage))
+            $result = $model->paginate($this->resolvePerPage(request()->get('per_page', $perPage)))
                 ->appends(request()->query());
 
             // Calculate the starting order number based on current page and per_page
@@ -275,7 +301,7 @@ class BaseService implements BaseContract
             if (is_null($withPaginate)) $withPaginate = config('service-contract.default_paginated');
             if (!$withPaginate) return $model->get();
 
-            $result = $model->paginate($perPage)
+            $result = $model->paginate($this->resolvePerPage($perPage))
                 ->appends(request()->query());
 
             // Calculate the starting order number based on current page and per_page

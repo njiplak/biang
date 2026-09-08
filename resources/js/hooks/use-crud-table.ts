@@ -5,7 +5,13 @@ import { FormResponse } from '@/lib/constant';
 import type { Base } from '@/types/base';
 import type { RouteQueryOptions, RouteDefinition } from '@/wayfinder';
 
-export type CrudRoutes<T> = {
+/*
+ * Not generic: nothing in here is shaped by the row type. It used to carry a
+ * <T> that no member referenced, which is a phantom parameter - it reads like
+ * a constraint and enforces nothing. useCrudTable still takes one, because it
+ * genuinely uses it for the fetch payload.
+ */
+export type CrudRoutes = {
     fetch: (options?: RouteQueryOptions) => RouteDefinition<'get'>;
     destroy: (
         id: { id: string | number } | [string | number] | string | number,
@@ -19,7 +25,7 @@ export type CrudRoutes<T> = {
     create: (options?: RouteQueryOptions) => RouteDefinition<'get'>;
 };
 
-export function useCrudTable<T>(routes: CrudRoutes<T>) {
+export function useCrudTable<T>(routes: CrudRoutes) {
     const [deleteId, setDeleteId] = useState<any>();
     const [selected, setSelected] = useState<any[]>([]);
     const { delete: deleteForm, setData, post } = useForm<any>({ ids: [] });

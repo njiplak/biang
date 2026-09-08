@@ -18,6 +18,8 @@ beforeEach(function () {
 });
 
 it('changes a member role', function () {
+    // A role change is a write, and a fresh workspace is unpaid and read-only.
+    subscribeWorkspace($this->workspace);
     $member = WorkspaceMember::factory()->for($this->workspace)->create();
 
     $this->actingAs($this->owner)
@@ -29,6 +31,7 @@ it('changes a member role', function () {
 
 // Section 3: only an owner may create another owner.
 it('stops an admin promoting someone to owner', function () {
+    subscribeWorkspace($this->workspace);
     $admin = User::factory()->create();
     WorkspaceMember::factory()->for($this->workspace)->for($admin)->admin()->create();
     $member = WorkspaceMember::factory()->for($this->workspace)->create();

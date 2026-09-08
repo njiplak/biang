@@ -26,6 +26,12 @@ type ChosenPlan = {
 type Props = {
     invitedEmail?: string | null;
     invitedTo?: string | null;
+    /*
+     * Section 11: the app links to terms and privacy from signup. Either can
+     * be null while the page is still a draft, and a null means no link at all
+     * rather than one that 404s.
+     */
+    legal?: { terms: string | null; privacy: string | null };
     // Section 11: carried from the marketing site's "Start trial" button.
     plan?: ChosenPlan | null;
 };
@@ -35,7 +41,12 @@ const money = (minor: number, currency: string) =>
         minor / 100,
     );
 
-export default function Register({ invitedEmail, invitedTo, plan }: Props) {
+export default function Register({
+    invitedEmail,
+    invitedTo,
+    plan,
+    legal,
+}: Props) {
     const { data, setData, post, processing, errors, reset } =
         useForm<FormData>({
             name: '',
@@ -148,6 +159,32 @@ export default function Register({ invitedEmail, invitedTo, plan }: Props) {
                     )}
                     Create account
                 </Button>
+
+                {/* Section 11. Shown only for pages that are actually
+                    published - see Page::legalLinks(). */}
+                {(legal?.terms || legal?.privacy) && (
+                    <p className="text-center text-xs text-muted-foreground">
+                        By creating an account you agree to our{' '}
+                        {legal.terms && (
+                            <a
+                                href={legal.terms}
+                                className="underline underline-offset-4"
+                            >
+                                Terms of Service
+                            </a>
+                        )}
+                        {legal.terms && legal.privacy && ' and '}
+                        {legal.privacy && (
+                            <a
+                                href={legal.privacy}
+                                className="underline underline-offset-4"
+                            >
+                                Privacy Policy
+                            </a>
+                        )}
+                        .
+                    </p>
+                )}
 
                 <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{' '}

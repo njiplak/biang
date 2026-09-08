@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CatalogController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\ImpersonationController;
+use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\SchedulerController;
 use App\Http\Controllers\Admin\StaffController;
 use Illuminate\Support\Facades\Route;
@@ -139,6 +140,34 @@ Route::prefix('admin')->as('admin.')->group(function () {
             Route::post('{announcement}/publish', [AnnouncementController::class, 'publish'])->name('publish');
             Route::delete('{announcement}/publish', [AnnouncementController::class, 'unpublish'])->name('unpublish');
             Route::delete('{announcement}', [AnnouncementController::class, 'destroy'])->name('destroy');
+        });
+
+        /*
+         * Staff-written content addressed by slug - the terms and privacy
+         * pages section 11 owes, first of all.
+         *
+         * Deliberately NOT rendered to the public here. Section 11 puts terms
+         * and privacy on the marketing site, which would read them the way it
+         * already reads /api/pricing; whether they are instead served from
+         * this app is still open, so the decision is not baked into a route.
+         */
+        Route::prefix('pages')->as('page.')->group(function () {
+            Route::get('/', [PageController::class, 'index'])
+                ->name('index')->middleware('permission:page.view');
+            Route::get('fetch', [PageController::class, 'fetch'])
+                ->name('fetch')->middleware('permission:page.view');
+            Route::get('create', [PageController::class, 'create'])
+                ->name('create')->middleware('permission:page.create');
+            Route::post('/', [PageController::class, 'store'])
+                ->name('store')->middleware('permission:page.create');
+            Route::get('{id}', [PageController::class, 'show'])
+                ->name('show')->middleware('permission:page.update');
+            Route::put('{id}', [PageController::class, 'update'])
+                ->name('update')->middleware('permission:page.update');
+            Route::delete('{id}', [PageController::class, 'destroy'])
+                ->name('destroy')->middleware('permission:page.delete');
+            Route::post('destroy-bulk', [PageController::class, 'destroy_bulk'])
+                ->name('destroy-bulk')->middleware('permission:page.delete');
         });
 
         /*

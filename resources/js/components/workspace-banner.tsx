@@ -1,6 +1,6 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { AlertTriangle, Clock, Lock } from 'lucide-react';
-import type { CurrentWorkspace } from '@/types';
+import type { CurrentWorkspace, SharedData } from '@/types';
 
 /**
  * Spec sections 6 and 9 promise the customer is told plainly what is happening
@@ -12,6 +12,10 @@ export default function WorkspaceBanner({
 }: {
     workspace: CurrentWorkspace | null;
 }) {
+    // Set by staff in the console. Null until someone fills it in, which is
+    // why every use below has a plain-text fallback.
+    const supportUrl = usePage<SharedData>().props.support?.url ?? null;
+
     if (!workspace) return null;
 
     /*
@@ -72,7 +76,20 @@ export default function WorkspaceBanner({
         return (
             <Banner tone="danger" icon={<Lock className="size-4 shrink-0" />}>
                 This workspace is suspended. You can still read and export your
-                data. Contact support to resolve it.
+                data.{' '}
+                {supportUrl ? (
+                    <>
+                        <a
+                            href={supportUrl}
+                            className="underline underline-offset-4"
+                        >
+                            Contact support
+                        </a>{' '}
+                        to resolve it.
+                    </>
+                ) : (
+                    'Contact support to resolve it.'
+                )}
             </Banner>
         );
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\BillingInterval;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\Page;
 use App\Models\Plan;
 use App\Models\PlanPrice;
 use App\Models\User;
@@ -92,6 +93,12 @@ class RegisterController extends Controller
             // Prefills the form and tells the page why it is asking.
             'invitedEmail' => $invitation?->email,
             'invitedTo' => $invitation?->workspace->name,
+            /*
+             * Section 11: "Our app links to them from signup." Null entries
+             * where the page is not published yet, so the form shows no link
+             * rather than one that 404s.
+             */
+            'legal' => Page::legalLinks(),
         ]);
     }
 

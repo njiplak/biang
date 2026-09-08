@@ -17,7 +17,7 @@ export default function PasswordSettings({ status }: { status?: string }) {
             <Head title="Password" />
 
             <div className="flex max-w-2xl flex-col gap-8">
-                <div className="flex gap-4 text-sm">
+                <div className="flex flex-wrap gap-4 text-sm">
                     <Link
                         href="/settings/profile"
                         className="text-muted-foreground underline underline-offset-4"
@@ -30,6 +30,12 @@ export default function PasswordSettings({ status }: { status?: string }) {
                         className="text-muted-foreground underline underline-offset-4"
                     >
                         Two-factor
+                    </Link>
+                    <Link
+                        href="/settings/sessions"
+                        className="text-muted-foreground underline underline-offset-4"
+                    >
+                        Sessions
                     </Link>
                 </div>
 

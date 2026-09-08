@@ -4,6 +4,7 @@ import {
     LayoutDashboard,
     LogOut,
     Settings,
+    UserCog,
     Users,
 } from 'lucide-react';
 import AnnouncementBanner from '@/components/announcement-banner';
@@ -158,6 +159,21 @@ export default function AppLayout({ children }: AppLayoutProps) {
                                     <DropdownMenuLabel>
                                         {auth.user?.email}
                                     </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {/* The person's own account, not the
+                                        workspace's (section 2). This was the
+                                        only door to it: without it, changing a
+                                        password or turning on a second factor
+                                        meant knowing the URL. */}
+                                    <DropdownMenuItem asChild>
+                                        <Link
+                                            className="block w-full cursor-pointer"
+                                            href="/settings/profile"
+                                        >
+                                            <UserCog className="mr-2" />
+                                            Account settings
+                                        </Link>
+                                    </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem asChild>
                                         <Link

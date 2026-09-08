@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
+import AppearanceToggleTab from '@/components/appearance-tabs';
 import InputError from '@/components/input-error';
 import { PasswordInput } from '@/components/password-input';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,7 @@ export default function Profile({
             <Head title="Profile" />
 
             <div className="flex max-w-2xl flex-col gap-8">
-                <div className="flex gap-4 text-sm">
+                <div className="flex flex-wrap gap-4 text-sm">
                     <span className="font-medium">Profile</span>
                     <Link
                         href="/settings/password"
@@ -48,6 +49,12 @@ export default function Profile({
                         className="text-muted-foreground underline underline-offset-4"
                     >
                         Two-factor
+                    </Link>
+                    <Link
+                        href="/settings/sessions"
+                        className="text-muted-foreground underline underline-offset-4"
+                    >
+                        Sessions
                     </Link>
                 </div>
 
@@ -149,6 +156,21 @@ export default function Profile({
                             </Button>
                         </div>
                     </form>
+                </section>
+
+                {/* The theme was already being applied on boot from a cookie
+                    that nothing could set: initializeTheme() and the
+                    HandleAppearance middleware were both wired up, and the one
+                    control that changes the value was in a component no page
+                    imported. This is that control. */}
+                <section className="flex flex-col gap-3 border-t border-border pt-6">
+                    <h2 className="text-sm font-medium text-muted-foreground">
+                        Appearance
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                        Applies to this browser only.
+                    </p>
+                    <AppearanceToggleTab />
                 </section>
 
                 {/* Section 3: the sole owner of a workspace has to hand over

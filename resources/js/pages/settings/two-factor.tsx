@@ -39,7 +39,7 @@ export default function TwoFactor({
             <Head title="Two-factor authentication" />
 
             <div className="flex max-w-2xl flex-col gap-6 p-6">
-                <div className="flex gap-4 text-sm">
+                <div className="flex flex-wrap gap-4 text-sm">
                     <Link
                         href="/settings/profile"
                         className="text-muted-foreground underline underline-offset-4"
@@ -53,6 +53,12 @@ export default function TwoFactor({
                         Password
                     </Link>
                     <span className="font-medium">Two-factor</span>
+                    <Link
+                        href="/settings/sessions"
+                        className="text-muted-foreground underline underline-offset-4"
+                    >
+                        Sessions
+                    </Link>
                 </div>
 
                 <div className="flex flex-col gap-1">

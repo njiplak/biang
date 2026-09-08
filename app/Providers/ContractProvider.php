@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Contract\Admin\AnnouncementContract;
 use App\Contract\Admin\AuditContract;
+use App\Contract\Admin\PageContract;
 use App\Contract\Admin\AuditViewContract;
 use App\Contract\Admin\BillingOpsContract;
 use App\Contract\Admin\CatalogContract;
@@ -13,6 +14,7 @@ use App\Contract\Admin\RevenueContract;
 use App\Contract\Admin\SchedulerHealthContract;
 use App\Contract\Admin\StaffContract;
 use App\Contract\Auth\AccountContract;
+use App\Contract\Auth\BrowserSessionContract;
 use App\Contract\Auth\AdminAuthContract;
 use App\Contract\Auth\TwoFactorContract;
 use App\Contract\Auth\UserAuthContract;
@@ -38,6 +40,7 @@ use App\Contract\Workspace\WorkspaceContract;
 use App\Contract\Workspace\WorkspaceMemberContract;
 use App\Service\Admin\AnnouncementService;
 use App\Service\Admin\AuditLogger;
+use App\Service\Admin\PageService;
 use App\Service\Admin\AuditViewService;
 use App\Service\Admin\BillingOpsService;
 use App\Service\Admin\CatalogService;
@@ -47,6 +50,7 @@ use App\Service\Admin\RevenueService;
 use App\Service\Admin\SchedulerHealthService;
 use App\Service\Admin\StaffService;
 use App\Service\Auth\AccountService;
+use App\Service\Auth\BrowserSessionService;
 use App\Service\Auth\AdminAuthService;
 use App\Service\Auth\TwoFactorService;
 use App\Service\Auth\UserAuthService;
@@ -81,11 +85,13 @@ class ContractProvider extends ServiceProvider
         UserAuthContract::class => UserAuthService::class,
         AdminAuthContract::class => AdminAuthService::class,
         AccountContract::class => AccountService::class,
+        BrowserSessionContract::class => BrowserSessionService::class,
         TwoFactorContract::class => TwoFactorService::class,
 
         // Admin console
         AnnouncementContract::class => AnnouncementService::class,
         AuditContract::class => AuditLogger::class,
+        PageContract::class => PageService::class,
         AuditViewContract::class => AuditViewService::class,
         SchedulerHealthContract::class => SchedulerHealthService::class,
         BillingOpsContract::class => BillingOpsService::class,

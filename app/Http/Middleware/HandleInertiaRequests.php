@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMember;
 use App\Support\CurrentWorkspace;
+use App\Support\SiteSettings;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -80,6 +81,18 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'warning' => $request->hasSession() ? $request->session()->get('warning') : null,
             ],
+            /*
+             * Section 6 tells a suspended customer to "contact support", and
+             * until this there was nothing to click. Shared rather than passed
+             * per page because the banner that needs it lives in the layout,
+             * so every customer screen can raise it.
+             *
+             * Only for signed-in customers: a guest has no banner to act on,
+             * and staff have the console.
+             */
+            'support' => $user === null
+                ? null
+                : ['url' => SiteSettings::supportUrl()],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Auth\RegisterController;
+use App\Models\Plan;
+use App\Service\Billing\SubscriptionService;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -14,7 +18,7 @@ use Inertia\Response;
  */
 class DashboardController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         // The workspace list is already shared as `tenancy` on every page for
         // the switcher; shipping a second copy here was duplicate state, and
@@ -24,6 +28,60 @@ class DashboardController extends Controller
         // nobody who needs telling can get here. A banner offering to resend a
         // link, on a page an unverified account cannot open, was UI for a state
         // that no longer exists.
-        return Inertia::render('dashboard');
+        return Inertia::render('dashboard', [
+            'pending_plan' => $this->pendingPlan($request),
+        ]);
+    }
+
+    /**
+     * The plan chosen on the marketing site, still waiting to be acted on.
+     *
+     * Section 11 carries a plan through signup and section 5 Path A ends at
+     * the card form - but the step between them is "name your workspace", and
+     * until now nothing said so. Someone who clicked Pro, signed up and
+     * verified landed on a page that said only "You are not in a workspace
+     * yet", with no sign the plan they picked was still waiting. Section 15
+     * calls trial-to-paid "the number this whole build exists to move", and
+     * that silence sits directly on it.
+     *
+     * Read, never pulled: WorkspaceController::startPendingCheckout consumes
+     * these keys when the workspace is actually created, and consuming them
+     * here would spend the choice on rendering a page.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function pendingPlan(Request $request): ?array
+    {
+        if (! $request->hasSession()) {
+            return null;
+        }
+
+        $code = $request->session()->get(RegisterController::PENDING_PLAN);
+
+        if (! is_string($code) || $code === '') {
+            return null;
+        }
+
+        // The same narrowing the signup link gets: a retired or hidden plan is
+        // not something we should still be promising.
+        $plan = Plan::query()->public()->where('is_free', false)
+            ->where('code', $code)->first();
+
+        if ($plan === null) {
+            return null;
+        }
+
+        return [
+            'name' => $plan->name,
+            /*
+             * Section 12 sells one trial per PERSON, ever. Promising a trial to
+             * somebody who has already spent theirs would be a second lie on
+             * the same screen - they can still buy, so the prompt stays, but it
+             * stops naming a trial.
+             */
+            'trial_days' => $request->user()->hasConsumedTrial()
+                ? null
+                : SubscriptionService::TRIAL_DAYS,
+        ];
     }
 }

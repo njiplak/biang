@@ -66,7 +66,9 @@ it('lets an ordinary member leave on their own', function () {
 });
 
 it('stops an admin promoting anyone to owner', function () {
-    $ws = Workspace::factory()->create();
+    // paying(), because a role change is a write and an unpaid workspace is
+    // read-only - this test is about who may promote, not about being expired.
+    $ws = Workspace::factory()->paying()->create();
     membership($ws, WorkspaceRole::Owner);
     $admin = membership($ws, WorkspaceRole::Admin)->user;
     $target = membership($ws, WorkspaceRole::Member);
@@ -77,7 +79,7 @@ it('stops an admin promoting anyone to owner', function () {
 });
 
 it('lets an owner promote someone to owner', function () {
-    $ws = Workspace::factory()->create();
+    $ws = Workspace::factory()->paying()->create();
     $owner = membership($ws, WorkspaceRole::Owner)->user;
     $target = membership($ws, WorkspaceRole::Member);
 
@@ -91,4 +93,30 @@ it('never lets a stranger touch a membership', function () {
 
     expect($stranger->can('delete', $target))->toBeFalse()
         ->and($stranger->can('update', $target))->toBeFalse();
+});
+
+/*
+ * Section 6: read-only means no writing, and a role change is a write. The
+ * escape hatches stay open either side of it - removing somebody frees a seat
+ * and is how a workspace gets back under its limit (section 7), and the last
+ * owner still has to be able to hand over and leave.
+ */
+it('blocks role changes on a read-only workspace but not removals', function () {
+    $ws = Workspace::factory()->create();
+    $owner = membership($ws, WorkspaceRole::Owner)->user;
+    membership($ws, WorkspaceRole::Owner);
+    $target = membership($ws, WorkspaceRole::Member);
+
+    expect($ws->canWrite())->toBeFalse()
+        ->and($owner->can('update', $target))->toBeFalse()
+        ->and($owner->can('assignRole', [$target, WorkspaceRole::Admin]))->toBeFalse()
+        ->and($owner->can('delete', $target))->toBeTrue();
+});
+
+it('allows role changes again once there is a live plan', function () {
+    $ws = Workspace::factory()->paying()->create();
+    $owner = membership($ws, WorkspaceRole::Owner)->user;
+    $target = membership($ws, WorkspaceRole::Member);
+
+    expect($owner->can('update', $target))->toBeTrue();
 });

@@ -64,6 +64,9 @@ export type SharedData = {
     announcements: AnnouncementNotice[];
     // Survives exactly one redirect. Null on almost every request.
     flash: { warning: string | null };
+    // Null for guests and in the admin console. `url` is null until staff set
+    // a support destination in the console, so screens must cope without one.
+    support: { url: string | null } | null;
     sidebarOpen: boolean;
     [key: string]: unknown;
 };

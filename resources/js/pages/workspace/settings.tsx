@@ -16,17 +16,23 @@ type Member = {
 
 type Props = {
     workspace: { ulid: string; name: string; slug: string };
-    can: { rename: boolean; transfer: boolean; close: boolean };
+    // rename_blocked_by names which half of the policy said no: the person's
+    // role, or the workspace's state. Null while renaming is allowed.
+    can: {
+        rename: boolean;
+        rename_blocked_by: 'role' | 'state' | null;
+        transfer: boolean;
+        close: boolean;
+    };
     members: Member[];
 };
 
 export default function WorkspaceSettings({ workspace, can, members }: Props) {
+    const page = usePage<SharedData>();
     const rename = useForm({ name: workspace.name });
     const [successor, setSuccessor] = useState<string>('');
     const [confirmName, setConfirmName] = useState('');
-    const pageErrors = usePage<SharedData>().props.errors as
-        | Record<string, string>
-        | undefined;
+    const pageErrors = page.props.errors as Record<string, string> | undefined;
 
     const self = members.find((m) => m.is_self);
     const candidates = members.filter((m) => !m.is_self);
@@ -81,9 +87,15 @@ export default function WorkspaceSettings({ workspace, can, members }: Props) {
                             Save
                         </Button>
                     </form>
+                    {/* Two reasons reach the same disabled field and they need
+                        different people: an admin, or a card. The server says
+                        which, because WorkspacePolicy::update collapses both
+                        into one boolean. */}
                     {!can.rename && (
                         <p className="text-xs text-muted-foreground">
-                            Only owners and admins can rename this workspace.
+                            {can.rename_blocked_by === 'state'
+                                ? 'This workspace is read-only, so its name cannot be changed until there is an active plan.'
+                                : 'Only owners and admins can rename this workspace.'}
                         </p>
                     )}
                 </section>

@@ -14,7 +14,7 @@ export type IndexPageProps<T extends { id: number | string }> = {
     description: string;
     addLabel?: string;
     columns: ColumnDef<T, any>[];
-    routes: CrudRoutes<T>;
+    routes: CrudRoutes;
     hideAdd?: boolean;
     disableSelect?: boolean;
     showActionColumn?: boolean;

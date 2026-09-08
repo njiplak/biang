@@ -16,6 +16,18 @@ beforeEach(function () {
     $this->withoutVite();
     $this->seed(AdminRoleSeeder::class);
 
+    /*
+     * Pinned, because every task below is due at 09:00 with 60 minutes of
+     * grace: run for real between 09:00 and 10:00 and the deadline is still in
+     * the future, so "silently stopped" and "never ran at all" both report
+     * healthy and their tests fail. Nothing was wrong with the code - the suite
+     * simply disagreed with itself depending on the hour it was run.
+     *
+     * Noon is past the grace window and inside the same day, so the last due
+     * time is 09:00 today for every test that does not travel somewhere else.
+     */
+    $this->travelTo(today()->setTime(12, 0));
+
     $this->scheduler = app(SchedulerHealthContract::class);
 
     $this->admin = AdminUser::factory()->create();

@@ -82,3 +82,54 @@ it('stops the last owner leaving via the members endpoint', function () {
         ->delete(route('workspace.member.destroy', $membership))
         ->assertForbidden();
 });
+
+/*
+ * `can.rename` collapses two independent refusals - your role, and whether the
+ * workspace can be written to at all - and the screen has to name the right
+ * one. "Ask an owner" and "nobody is paying for this" are fixed by different
+ * people.
+ */
+it('names nothing while renaming is allowed', function () {
+    $this->actingAs($this->owner)
+        ->get(route('workspace.settings', $this->workspace))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('can.rename_blocked_by', null));
+});
+
+it('blames the workspace state when the owner is the one blocked', function () {
+    $unpaid = app(WorkspaceContract::class)->create($this->owner, 'Skint Ltd');
+
+    $this->actingAs($this->owner)
+        ->get(route('workspace.settings', $unpaid))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('can.rename', false)
+            ->where('can.rename_blocked_by', 'state'));
+});
+
+it('blames the role when the person could never rename it anyway', function () {
+    $viewer = User::factory()->create();
+    WorkspaceMember::factory()->for($this->workspace)->for($viewer)->viewer()->create();
+
+    $this->actingAs($viewer)
+        ->get(route('workspace.settings', $this->workspace))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('can.rename', false)
+            ->where('can.rename_blocked_by', 'role'));
+});
+
+/*
+ * Both at once. Role wins: a viewer told the workspace needs a plan is being
+ * pointed at a billing page their role cannot open either.
+ */
+it('blames the role first when both reasons apply', function () {
+    $unpaid = app(WorkspaceContract::class)->create($this->owner, 'Skint Ltd');
+    $viewer = User::factory()->create();
+    WorkspaceMember::factory()->for($unpaid)->for($viewer)->viewer()->create();
+
+    $this->actingAs($viewer)
+        ->get(route('workspace.settings', $unpaid))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('can.rename_blocked_by', 'role'));
+});

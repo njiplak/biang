@@ -63,6 +63,13 @@ class AdminRoleSeeder extends Seeder
         'announcement.manage' => 'Announce maintenance or a new feature',
         'staff.manage' => 'Manage staff accounts and their roles',
 
+        // Section 11's terms and privacy pages, and any other copy staff need
+        // to change without a deploy.
+        'page.view' => 'View content pages',
+        'page.create' => 'Create content pages',
+        'page.update' => 'Update and publish content pages',
+        'page.delete' => 'Delete content pages',
+
         // Gating the pre-existing backoffice screens, which moved onto the
         // admin guard when section 3's separation was enforced.
         'setting.view' => 'View application settings',

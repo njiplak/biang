@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Settings\EmailChangeController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
+use App\Http\Controllers\Settings\SessionController;
 use App\Http\Controllers\Settings\TwoFactorController;
 use Illuminate\Support\Facades\Route;
 
@@ -55,6 +56,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('settings/email/pending', [EmailChangeController::class, 'cancel'])
         ->withoutMiddleware('verified')
         ->name('settings.email.cancel');
+
+    /*
+     * Where this account is signed in, and the way out of everywhere else.
+     *
+     * Reading is open; ending the others sits behind `password.confirm`, the
+     * same gate the two-factor changes use and for the same reason - somebody
+     * at an unlocked laptop must not be able to lock the owner out of every
+     * device they have.
+     */
+    Route::get('settings/sessions', [SessionController::class, 'index'])->name('sessions.index');
+    Route::delete('settings/sessions', [SessionController::class, 'destroy'])
+        ->middleware('password.confirm')->name('sessions.destroy');
 
     /*
      * Opt-in second factor. Reading the page is open; every change to it is

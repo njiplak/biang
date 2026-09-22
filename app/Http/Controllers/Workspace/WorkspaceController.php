@@ -8,6 +8,7 @@ use App\Contract\Workspace\WorkspaceContract;
 use App\Enums\BillingInterval;
 use App\Exceptions\Domain\DomainException;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
+use App\Exceptions\Domain\TrialCheckoutInFlight;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Workspace\TransferOwnershipRequest;
@@ -89,13 +90,33 @@ class WorkspaceController extends Controller
 
         $buyer = $request->user();
 
+        // Null when this price is bought outright rather than trialled - annual
+        // is, because a year charged unannounced on day 15 is a chargeback.
+        $trialDays = SubscriptionService::trialDaysFor($price);
+
         /*
          * Section 12: one trial per person, ever. Checked here rather than left
          * to the webhook so a returning customer is told before a card form,
          * not after entering one.
+         *
+         * Only asked when there is a trial to spend. An annual price carries
+         * none, and turning away somebody who is ready to buy outright because
+         * they trialled something months ago would cost a sale to enforce a
+         * rule that is not being broken.
          */
-        if ($buyer->hasConsumedTrial()) {
+        if ($trialDays !== null && $buyer->hasConsumedTrial()) {
             $request->session()->flash('warning', (new TrialAlreadyConsumed($buyer))->userMessage());
+
+            return null;
+        }
+
+        /*
+         * The same rule one step earlier. A trial is only recorded as consumed
+         * when Dodo's webhook lands, so two workspaces opened side by side both
+         * passed the check above and both got fourteen free days on one card.
+         */
+        if ($trialDays !== null && $buyer->hasTrialCheckoutPendingElsewhere($workspace)) {
+            $request->session()->flash('warning', (new TrialCheckoutInFlight($buyer))->userMessage());
 
             return null;
         }
@@ -107,7 +128,7 @@ class WorkspaceController extends Controller
                 $buyer,
                 route('billing.index'),
                 route('billing.index'),
-                SubscriptionService::TRIAL_DAYS,
+                $trialDays,
             );
         } catch (DomainException $e) {
             // Section 14 phase 3 keeps the product sellable by hand, so a
@@ -115,6 +136,13 @@ class WorkspaceController extends Controller
             $request->session()->flash('warning', $e->userMessage());
 
             return null;
+        }
+
+        // Only once they are actually on their way to the card form: a claim
+        // staked before a refused checkout would cost them a trial they never
+        // got the chance to start.
+        if ($trialDays !== null) {
+            $buyer->rememberTrialCheckout($workspace);
         }
 
         // Inertia cannot follow a redirect to another origin on its own.

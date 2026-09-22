@@ -7,6 +7,7 @@ use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
+use App\Enums\BillingInterval;
 use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
 use App\Enums\CancellationFeedback;
@@ -16,6 +17,7 @@ use App\Exceptions\Domain\DowngradeBlocked;
 use App\Exceptions\Domain\NoActiveSubscription;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Exceptions\Domain\TrialNotExtendable;
+use App\Exceptions\Domain\TrialNotOffered;
 use App\Exceptions\Domain\WorkspaceAlreadySubscribed;
 use App\Models\Addon;
 use App\Models\AddonPrice;
@@ -47,6 +49,26 @@ class SubscriptionService implements SubscriptionContract
      */
     public const TRIAL_DAYS = 14;
 
+    /**
+     * How many free days a given price is sold with, or null when it is not
+     * sold with a trial at all. The ONE answer to that question - see the note
+     * on TRIAL_DAYS above about two constants drifting apart.
+     *
+     * Annual deliberately carries none. A trial auto-charges at the end
+     * (section 4), and a whole year's fee landing unannounced on day 15 is the
+     * most disputed shape in subscription billing; section 8 makes Dodo
+     * merchant of record, so that dispute reaches us as a chargeback rather
+     * than a refund request. Somebody who wants to try the product starts
+     * monthly and switches whenever they like - section 4 already prices the
+     * switch, and changePlan already prorates it.
+     */
+    public static function trialDaysFor(PlanPrice $price): ?int
+    {
+        return $price->billing_interval === BillingInterval::Month
+            ? self::TRIAL_DAYS
+            : null;
+    }
+
     public function __construct(
         private readonly EntitlementContract $entitlements,
         private readonly MembershipContract $memberships,
@@ -64,9 +86,14 @@ class SubscriptionService implements SubscriptionContract
 
             $this->assertNotSubscribed($workspace);
 
+            // The same answer the checkout asks for. A price that is not sold
+            // with a trial has none to grant by this door either - otherwise
+            // the rule would hold only where a card happened to be involved.
+            $days = self::trialDaysFor($price) ?? throw new TrialNotOffered($price);
+
             $subscription = $this->open($workspace, $price, [
                 'status' => SubscriptionStatus::Trialing,
-                'trial_ends_at' => now()->addDays(self::TRIAL_DAYS),
+                'trial_ends_at' => now()->addDays($days),
                 'billing_source' => BillingSource::Manual,
             ]);
 
@@ -129,23 +156,48 @@ class SubscriptionService implements SubscriptionContract
      */
     public function extendTrial(Workspace $workspace, int $days, AdminUser $admin, string $reason): Subscription
     {
-        return DB::transaction(function () use ($workspace, $days, $admin, $reason) {
-            $subscription = $this->liveSubscription($workspace);
+        $subscription = $this->liveSubscription($workspace);
 
-            if ($subscription === null || $subscription->status !== SubscriptionStatus::Trialing) {
-                throw new TrialNotExtendable($workspace);
-            }
+        if ($subscription === null || $subscription->status !== SubscriptionStatus::Trialing) {
+            throw new TrialNotExtendable($workspace);
+        }
 
-            // Extend from whichever is later. An in-flight trial GAINS days on
-            // top of what is left; one that has already lapsed - the hourly
-            // converter runs on a schedule, so there is a window - restarts from
-            // now rather than being extended into a date that is still past.
-            $from = $subscription->trial_ends_at?->isFuture()
-                ? $subscription->trial_ends_at
-                : now();
+        // Extend from whichever is later. An in-flight trial GAINS days on
+        // top of what is left; one that has already lapsed - the hourly
+        // converter runs on a schedule, so there is a window - restarts from
+        // now rather than being extended into a date that is still past.
+        $from = $subscription->trial_ends_at?->isFuture()
+            ? $subscription->trial_ends_at
+            : now();
 
+        $trialEndsAt = $from->addDays($days);
+
+        /*
+         * Dodo first, and deliberately OUTSIDE the transaction below, like
+         * every other call to their system.
+         *
+         *   move their billing date (money)  ->  move our column (the countdown)
+         *
+         * Section 8 makes them merchant of record, and a card-backed trial is
+         * just their subscription with its first days free - so
+         * `next_billing_date` IS when the trial ends. Writing only our column
+         * bought the customer nothing: they were still charged on the original
+         * date, having been told they had longer, which with a merchant of
+         * record is a chargeback rather than a support ticket.
+         *
+         * If they refuse, TrialExtensionFailed propagates and NOTHING of ours
+         * moves. Sales finds out immediately and can comp the plan instead.
+         *
+         * A trial granted by hand has no provider record to move, and section
+         * 14 phase 3 keeps those working with no provider at all.
+         */
+        if ($subscription->isHeldWithProvider()) {
+            $this->gateway->extendTrial($subscription, $trialEndsAt);
+        }
+
+        return DB::transaction(function () use ($subscription, $trialEndsAt, $admin, $reason) {
             $subscription->update([
-                'trial_ends_at' => $from->addDays($days),
+                'trial_ends_at' => $trialEndsAt,
                 // The same two columns the comp path uses. A trial extension is
                 // a staff grant with a reason, and this records the most recent
                 // one rather than accumulating a history - audit_logs is where

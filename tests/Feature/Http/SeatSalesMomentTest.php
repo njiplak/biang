@@ -96,9 +96,9 @@ it('buys no seat when the invitation itself is rejected', function () {
     expect(SubscriptionItem::withoutWorkspaceScope()->count())->toBe(0);
 });
 
-// Section 12: a free workspace has no payment account, so the offer is an
-// upgrade rather than a seat.
-it('offers no seat add-on on the free tier', function () {
+// Section 12: an unpaid workspace has no payment account, so what it is
+// offered is a plan rather than a seat.
+it('offers no seat add-on to an unpaid workspace', function () {
     $free = app(WorkspaceContract::class)->create(User::factory()->create(), 'Free Co');
     $freeOwner = $free->owners()->first()->user;
 

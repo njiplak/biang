@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BillingInterval;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Models\Plan;
 use App\Service\Billing\SubscriptionService;
@@ -71,6 +72,20 @@ class DashboardController extends Controller
             return null;
         }
 
+        /*
+         * The SAME price WorkspaceController will check out, resolved the same
+         * way - plan plus the interval carried beside it. Reading the plan
+         * alone quoted a monthly trial to somebody who picked annual.
+         */
+        $interval = BillingInterval::tryFrom(
+            (string) $request->session()->get(RegisterController::PENDING_INTERVAL)
+        ) ?? BillingInterval::Month;
+
+        $currency = config('billing.default_currency');
+
+        $price = $plan->activePriceFor($interval, $currency)
+            ?? $plan->activePriceFor(BillingInterval::Month, $currency);
+
         return [
             'name' => $plan->name,
             /*
@@ -78,10 +93,14 @@ class DashboardController extends Controller
              * somebody who has already spent theirs would be a second lie on
              * the same screen - they can still buy, so the prompt stays, but it
              * stops naming a trial.
+             *
+             * Null too when the price itself carries no trial, which annual
+             * does not: the prompt then offers the plan without promising free
+             * days that the card form is not going to give.
              */
-            'trial_days' => $request->user()->hasConsumedTrial()
+            'trial_days' => $request->user()->hasConsumedTrial() || $price === null
                 ? null
-                : SubscriptionService::TRIAL_DAYS,
+                : SubscriptionService::trialDaysFor($price),
         ];
     }
 }

@@ -189,8 +189,6 @@ it('allows a downgrade once enough people have been removed', function () {
     expect($this->entitlements->limitFor($this->workspace, Features::SEATS))->toBe(5);
 });
 
-// Section 6: "Cancelling does not delete anything. The workspace drops to the
-// free tier and the data stays."
 /*
  * Section 6 promised cancelling "does not delete anything". It still does not -
  * what changed is where it lands. There is no free tier to keep working on, so
@@ -224,7 +222,7 @@ it('keeps the cancelled subscription as history', function () {
 // Cancelling from a bigger plan can leave the workspace over the free limit -
 // section 7 then applies, rather than us deleting anyone's data to make it fit.
 /*
- * Cancelling used to drop a workspace onto the free tier, where too many
+ * Cancelling used to drop a workspace onto a usable free tier, where too many
  * members made it "over limit". There is no free tier now, so the block is not
  * about a limit at all - it is that nobody is paying. Everybody keeps their
  * seat and the whole workspace goes read-only.

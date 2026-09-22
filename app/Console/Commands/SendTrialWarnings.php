@@ -18,10 +18,21 @@ class SendTrialWarnings extends Command
 {
     protected $signature = 'billing:trial-warnings';
 
-    protected $description = 'Warn workspaces whose trial auto-charges in 3 days or tomorrow';
+    protected $description = 'Warn workspaces whose trial auto-charges in 7 days, 3 days or tomorrow';
 
-    /** Section 4: "clear warning emails at 3 days and 1 day before". */
-    private const MILESTONES = [3 => 'trial_ending_3d', 1 => 'trial_ending_1d'];
+    /**
+     * Section 4 asks for 3 days and 1 day. Seven is ours, and it is the one
+     * with evidence behind it: a reminder roughly a week before a trial
+     * converts is the single measured lever on trial-related chargebacks.
+     * Three days is short notice for a team that has to get a purchase
+     * approved, and the person who cannot approve it in time disputes the
+     * charge instead of asking us.
+     */
+    private const MILESTONES = [
+        7 => 'trial_ending_7d',
+        3 => 'trial_ending_3d',
+        1 => 'trial_ending_1d',
+    ];
 
     public function handle(BillingNotifierContract $notifier): int
     {
@@ -40,12 +51,21 @@ class SendTrialWarnings extends Command
                     continue;
                 }
 
-                // The key is the milestone, not the run - so a second run today
-                // and a retry tomorrow both resolve to "already sent".
+                /*
+                 * The key is the milestone AND the date it is counting down to.
+                 *
+                 * The milestone alone is what makes a second run today, or a
+                 * retry tomorrow, resolve to "already sent". The date is what
+                 * re-arms every milestone when staff extend the trial: the
+                 * charge moves to a new day, and the customer is owed the same
+                 * warnings before that one. Keyed on the milestone alone, a
+                 * customer whose trial was extended past its 3-day warning was
+                 * never warned again before the charge that actually happened.
+                 */
                 $sent += (int) $notifier->sendOnce(
                     $subscription->workspace,
                     $type,
-                    "{$type}:sub_{$subscription->id}",
+                    "{$type}:sub_{$subscription->id}:{$subscription->trial_ends_at->toDateString()}",
                     fn () => new TrialEndingNotification($subscription->workspace, $days),
                 );
             }

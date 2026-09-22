@@ -57,8 +57,8 @@ it('allows the same interval in a different currency', function () {
     expect($plan->prices()->count())->toBe(2);
 });
 
-// Cancelling drops a workspace to the free tier (section 6), so "which free
-// plan" must never be ambiguous.
+// Cancelling resolves a workspace's entitlements against the floor plan
+// (section 6), so "which free plan" must never be ambiguous.
 it('permits only one free plan', function () {
     Plan::factory()->floor()->create();
 

@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\TrialExtensionFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
@@ -62,6 +63,9 @@ class FakePaymentGateway implements PaymentGatewayContract
 
     /** @var list<array<string, mixed>> */
     public array $cancellations = [];
+
+    /** Every trial extension carried to the provider, in order. */
+    public array $trialExtensions = [];
 
     /**
      * What Dodo would say about a subscription, keyed by their id. Shaped like
@@ -226,6 +230,22 @@ class FakePaymentGateway implements PaymentGatewayContract
             'at_period_end' => $atPeriodEnd,
             'feedback' => $feedback?->value,
             'comment' => $comment,
+        ];
+    }
+
+    public function extendTrial(Subscription $subscription, \DateTimeInterface $trialEndsAt): void
+    {
+        if ($this->broken) {
+            throw new TrialExtensionFailed('the payment provider did not respond');
+        }
+
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new TrialExtensionFailed('this subscription is not held with the payment provider');
+        }
+
+        $this->trialExtensions[] = [
+            'subscription' => $subscription->dodo_subscription_id,
+            'next_billing_date' => $trialEndsAt->format(DATE_ATOM),
         ];
     }
 

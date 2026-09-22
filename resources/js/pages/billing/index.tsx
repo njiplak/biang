@@ -12,6 +12,10 @@ type Price = {
     interval: string;
     currency: string;
     amount_minor: number;
+    // Null when this price is bought outright rather than trialled. Annual is:
+    // the charge at the end of a trial is automatic, and a whole year arriving
+    // unannounced on day 15 is a dispute rather than a conversion.
+    trial_days: number | null;
 };
 // Every plan on this page carries a price: the floor plan is not public and
 // never reaches it.
@@ -386,23 +390,27 @@ function Plans({
                                 ))}
 
                             {/* Section 4: a card is taken up front and it
-                                auto-charges on day 15, so this is only offered
-                                to someone who has never spent their one trial. */}
-                            {!subscription && canStartTrial && (
-                                <Button
-                                    size="sm"
-                                    disabled={blocked}
-                                    onClick={() =>
-                                        router.post(
-                                            '/billing/trial',
-                                            { plan_price_id: price.id },
-                                            { preserveScroll: true },
-                                        )
-                                    }
-                                >
-                                    Start trial
-                                </Button>
-                            )}
+                                auto-charges at the end, so this is only offered
+                                to someone who has never spent their one trial -
+                                and only on a price actually sold with one, which
+                                annual is not. */}
+                            {!subscription &&
+                                canStartTrial &&
+                                price.trial_days !== null && (
+                                    <Button
+                                        size="sm"
+                                        disabled={blocked}
+                                        onClick={() =>
+                                            router.post(
+                                                '/billing/trial',
+                                                { plan_price_id: price.id },
+                                                { preserveScroll: true },
+                                            )
+                                        }
+                                    >
+                                        Start {price.trial_days}-day trial
+                                    </Button>
+                                )}
                         </span>
                     </div>
                 );

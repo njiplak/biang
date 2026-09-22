@@ -452,8 +452,11 @@ export default function CustomerShow({
                     <CardContent className="text-sm">
                         {subscription === null ? (
                             <p className="text-muted-foreground">
-                                No subscription. This workspace is on the free
-                                tier and does not exist at the payment provider.
+                                No subscription. Nobody is paying for this
+                                workspace, so it is read-only — everything in it
+                                is kept and still readable, and nothing can be
+                                changed until there is a live plan again. It
+                                does not exist at the payment provider.
                             </p>
                         ) : (
                             <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -476,7 +479,11 @@ export default function CustomerShow({
                                 />
                                 {subscription.trial_ends_at && (
                                     <Field
-                                        label="Trial ends"
+                                        label={
+                                            subscription.status === 'trialing'
+                                                ? 'Trial ends'
+                                                : 'Trial ended'
+                                        }
                                         value={formatDate(
                                             subscription.trial_ends_at,
                                         )}

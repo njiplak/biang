@@ -51,10 +51,10 @@ function subscribe(): void
     );
 }
 
-// Section 12: a free workspace does not exist in the payment provider at all,
-// so there is nothing to attach a paid add-on to. The offer for a free tier is
-// an upgrade, not a seat.
-it('refuses an add-on on the free tier', function () {
+// Section 12: an unpaid workspace does not exist in the payment provider at
+// all, so there is nothing to attach a paid add-on to. What it is offered is a
+// plan, not a seat.
+it('refuses an add-on on an unpaid workspace', function () {
     expect(fn () => $this->service->purchaseAddon($this->workspace, $this->seatPrice, 1))
         ->toThrow(NoActiveSubscription::class);
 

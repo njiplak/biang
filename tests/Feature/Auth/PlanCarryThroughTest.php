@@ -11,8 +11,9 @@ use Database\Seeders\FeatureSeeder;
 use Database\Seeders\PlanSeeder;
 
 /*
- * Section 11: "Two buttons, two destinations. Start free goes to signup and
- * ends on the free tier. Start trial carries the chosen plan through signup."
+ * Section 11 used to describe two buttons and two destinations, one of them
+ * "Start free". There is one destination now, because there is no free tier:
+ * every plan is bought, and every plan carries its code through signup.
  *
  * Two things have to survive the journey: the plan AND the billing interval.
  * The interval is chosen by the same pricing page toggle, and carrying only the
@@ -135,6 +136,51 @@ it('carries the chosen billing interval to the card form', function () {
     expect($gateway->checkouts[0]['plan_price_id'])->toBe($annual->id);
 });
 
+/*
+ * Annual is bought outright. A trial auto-charges at the end (section 4), and a
+ * whole year's fee landing unannounced on day 15 is the most disputed shape in
+ * subscription billing - section 8 makes Dodo merchant of record, so that
+ * arrives as a chargeback rather than a refund request. Somebody who wants to
+ * try it starts monthly and switches whenever they like.
+ */
+it('sells annual outright, promising no trial and granting none', function () {
+    $gateway = fakeGateway();
+
+    // The page does not promise free days it is not going to give.
+    $this->get(route('register', ['plan' => 'pro', 'interval' => 'year']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('plan.interval', 'year')
+            ->where('plan.trial_days', null));
+
+    signUpWith(['plan' => 'pro', 'interval' => 'year']);
+
+    $this->post(route('workspace.store'), ['name' => 'Acme Inc'])
+        ->assertRedirect('https://checkout.dodopayments.test/session/abc');
+
+    // And the card form charges rather than starting a countdown.
+    expect($gateway->checkouts)->toHaveCount(1)
+        ->and($gateway->checkouts[0]['trial_period_days'])->toBeNull();
+});
+
+/*
+ * The trial gate exists to stop a SECOND trial, not a sale. An annual price
+ * carries no trial, so somebody who trialled months ago and is now holding a
+ * card must reach the checkout rather than be turned away.
+ */
+it('still sells annual to somebody who has already used their trial', function () {
+    $gateway = fakeGateway();
+
+    signUpWith(['plan' => 'pro', 'interval' => 'year']);
+    User::query()->latest('id')->firstOrFail()->update(['trial_consumed_at' => now()->subMonth()]);
+
+    $this->post(route('workspace.store'), ['name' => 'Acme Inc'])
+        ->assertRedirect('https://checkout.dodopayments.test/session/abc');
+
+    expect($gateway->checkouts)->toHaveCount(1)
+        ->and($gateway->checkouts[0]['trial_period_days'])->toBeNull();
+});
+
 // No interval named is the ordinary case, and monthly is what the page quotes.
 it('defaults to monthly when the link names no interval', function () {
     $this->get(route('register', ['plan' => 'pro']))
@@ -175,8 +221,9 @@ it('ignores an interval that is not a billing interval at all', function () {
         ->assertInertia(fn ($page) => $page->where('plan.interval', 'month'));
 });
 
-// Section 5 Path A: "Start free" ends on the free tier with no card.
-it('leaves a plain signup on the free tier', function () {
+// Section 5 Path A: a signup naming no plan takes no card, so it lands on a
+// workspace nobody is paying for - everything readable, nothing writable.
+it('leaves a plain signup read-only with no card', function () {
     $this->get(route('register'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('plan', null));
@@ -226,7 +273,7 @@ it('ignores a retired plan', function () {
 /*
  * Section 12: one trial per person, ever. Somebody opening a second workspace
  * from a trial link must still get the workspace - losing it because the trial
- * was refused would be a far worse outcome than landing on the free tier. They
+ * was refused would be far worse than landing on a read-only workspace. They
  * are told before a card form rather than after entering one.
  */
 it('still creates the workspace when the trial is refused', function () {

@@ -104,8 +104,8 @@ it('takes a retired plan off sale', function () {
 });
 
 /*
- * Section 6: cancelling drops a workspace onto the free tier. Retiring it would
- * leave that path with nowhere to land.
+ * Section 6: cancelling resolves a workspace's entitlements against the floor
+ * plan. Retiring it would leave that path with nowhere to land.
  */
 it('refuses to retire the free plan', function () {
     expect(fn () => $this->catalog->archivePlan($this->free))

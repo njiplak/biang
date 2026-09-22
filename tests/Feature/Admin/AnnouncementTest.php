@@ -79,7 +79,7 @@ it('targets a plan', function () {
         'audience_filter' => ['plan_codes' => ['pro']],
     ]);
 
-    // On the free tier, so not addressed.
+    // Nobody is paying for it, so it is not addressed.
     expect($this->announcements->forUser($this->owner, $this->workspace))->toBeEmpty();
 
     $price = PlanPrice::whereHas('plan', fn ($q) => $q->where('code', 'pro'))
@@ -89,8 +89,9 @@ it('targets a plan', function () {
     expect($this->announcements->forUser($this->owner, $this->workspace->fresh()))->toHaveCount(1);
 });
 
-// A workspace with no subscription resolves to the free plan, not to "no plan".
-it('targets the free tier by its plan code', function () {
+// A workspace with no subscription resolves to the floor plan, not to "no
+// plan" - so that is the code an announcement targets it by.
+it('targets an unpaid workspace by its floor plan code', function () {
     ($this->announce)([
         'published_at' => now()->subMinute(),
         'audience' => 'plan',

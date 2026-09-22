@@ -6,8 +6,8 @@ use App\Models\User;
 
 /**
  * Section 12: one trial per person, EVER - not per workspace. Someone who has
- * already trialled and then creates a second workspace starts on free or paid,
- * never on trial.
+ * already trialled and then creates a second workspace either buys a plan or
+ * leaves it read-only. There is no free tier to land on and no second trial.
  *
  * Section 16 accepts that this occasionally catches a genuine customer, and the
  * remedy is a staff grant from the admin console rather than a looser rule.

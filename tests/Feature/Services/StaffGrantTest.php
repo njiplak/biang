@@ -5,6 +5,7 @@ use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Billing\UsageContract;
 use App\Enums\EntitlementSource;
 use App\Enums\SubscriptionStatus;
+use App\Exceptions\Domain\TrialExtensionFailed;
 use App\Exceptions\Domain\TrialNotExtendable;
 use App\Models\AdminUser;
 use App\Models\Feature;
@@ -21,6 +22,10 @@ use App\Models\WorkspaceEntitlementOverride;
  */
 
 beforeEach(function () {
+    // Before the service is resolved, not after: the gateway is
+    // constructor-injected, so a service built first holds the real Dodo client.
+    $this->gateway = fakeGateway();
+
     $this->subscriptions = app(SubscriptionContract::class);
     $this->entitlements = app(EntitlementContract::class);
     $this->usage = app(UsageContract::class);
@@ -74,6 +79,78 @@ it('restarts from today when the trial has already lapsed', function () {
 
     expect($extended->trial_ends_at->toDateString())->toBe(now()->addDays(5)->toDateString())
         ->and($extended->trial_ends_at->isFuture())->toBeTrue();
+});
+
+/*
+ * The bug this covers: `trial_ends_at` used to move on our side alone. Dodo
+ * owns the billing clock, so the customer was still charged on the original
+ * date having been told they had longer - and with a merchant of record that
+ * is a chargeback, not a support ticket.
+ */
+it('carries the extension to the payment provider', function () {
+    $workspace = Workspace::factory()->create();
+    $price = PlanPrice::factory()->for(Plan::factory()->create())->create();
+
+    Subscription::factory()->for($workspace)->create([
+        'plan_id' => $price->plan_id,
+        'plan_price_id' => $price->id,
+        'status' => SubscriptionStatus::Trialing,
+        'trial_ends_at' => now()->addDays(3),
+        'dodo_subscription_id' => 'sub_extendme',
+    ]);
+
+    $extended = $this->subscriptions->extendTrial($workspace, 7, $this->admin, 'Security review');
+
+    expect($this->gateway->trialExtensions)->toHaveCount(1)
+        ->and($this->gateway->trialExtensions[0]['subscription'])->toBe('sub_extendme')
+        // The date we told Dodo to charge on IS the date we show the customer.
+        ->and($this->gateway->trialExtensions[0]['next_billing_date'])
+        ->toStartWith($extended->trial_ends_at->format('Y-m-d'));
+});
+
+it('leaves the trial exactly where it was when the provider refuses', function () {
+    $workspace = Workspace::factory()->create();
+    $price = PlanPrice::factory()->for(Plan::factory()->create())->create();
+
+    $original = now()->addDays(3);
+
+    $subscription = Subscription::factory()->for($workspace)->create([
+        'plan_id' => $price->plan_id,
+        'plan_price_id' => $price->id,
+        'status' => SubscriptionStatus::Trialing,
+        'trial_ends_at' => $original,
+        'dodo_subscription_id' => 'sub_extendme',
+    ]);
+
+    $this->gateway->broken();
+
+    expect(fn () => $this->subscriptions->extendTrial($workspace, 7, $this->admin, 'Security review'))
+        ->toThrow(TrialExtensionFailed::class);
+
+    // Nothing of ours moved - not the date, and not the grant columns.
+    expect($subscription->fresh()->trial_ends_at->toDateString())->toBe($original->toDateString())
+        ->and($subscription->fresh()->grant_reason)->toBeNull();
+});
+
+/*
+ * Section 14 phase 3: a trial granted by hand has no provider record, and the
+ * product stays operable with no provider wired up at all.
+ */
+it('extends a comped trial without calling the provider', function () {
+    $workspace = Workspace::factory()->create();
+    $price = PlanPrice::factory()->for(Plan::factory()->create())->create();
+
+    Subscription::factory()->for($workspace)->manual()->create([
+        'plan_id' => $price->plan_id,
+        'plan_price_id' => $price->id,
+        'status' => SubscriptionStatus::Trialing,
+        'trial_ends_at' => now()->addDays(3),
+    ]);
+
+    $extended = $this->subscriptions->extendTrial($workspace, 7, $this->admin, 'Launch partner');
+
+    expect($extended->trial_ends_at->toDateString())->toBe(now()->addDays(10)->toDateString())
+        ->and($this->gateway->trialExtensions)->toBeEmpty();
 });
 
 it('refuses to extend a workspace that is not on a trial', function () {

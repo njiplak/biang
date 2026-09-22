@@ -11,6 +11,8 @@ use App\Enums\CancellationFeedback;
 use App\Enums\PullOutcome;
 use App\Exceptions\Domain\ProviderLookupFailed;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
+use App\Exceptions\Domain\TrialCheckoutInFlight;
+use App\Exceptions\Domain\TrialNotOffered;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\AddonPurchaseRequest;
 use App\Http\Requests\Billing\AddonQuantityRequest;
@@ -189,7 +191,25 @@ class BillingController extends Controller
             throw new TrialAlreadyConsumed($buyer);
         }
 
+        // The same rule one step earlier: consumption is only recorded when
+        // Dodo's webhook lands, and two workspaces started side by side both
+        // cleared the check above.
+        if ($buyer->hasTrialCheckoutPendingElsewhere($workspace)) {
+            throw new TrialCheckoutInFlight($buyer);
+        }
+
         $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        /*
+         * Not every price is sold with one. Annual is not, because the charge
+         * at the end of a trial is automatic and a year's fee arriving
+         * unannounced is a chargeback rather than a conversion. The page does
+         * not offer the button for such a price, so this catches a hand-posted
+         * id - and says what to do instead rather than quietly selling them a
+         * trial that was never on offer.
+         */
+        $trialDays = SubscriptionService::trialDaysFor($price)
+            ?? throw new TrialNotOffered($price);
 
         // Before the card form, not after the charge. DowngradeBlocked names
         // exactly how many people have to go.
@@ -201,8 +221,12 @@ class BillingController extends Controller
             $buyer,
             route('billing.index'),
             route('billing.index'),
-            SubscriptionService::TRIAL_DAYS,
+            $trialDays,
         );
+
+        // After the checkout exists, never before: a claim staked against a
+        // refused checkout would cost them a trial they never started.
+        $buyer->rememberTrialCheckout($workspace);
 
         return Inertia::location($url);
     }
@@ -503,6 +527,11 @@ class BillingController extends Controller
                         'interval' => $price->billing_interval->value,
                         'currency' => $price->currency,
                         'amount_minor' => $price->amount_minor,
+                        // Null means this one is bought outright. The trial
+                        // button is hidden rather than disabled: a disabled
+                        // button invites "why can't I?", and the answer is that
+                        // this price was never sold that way.
+                        'trial_days' => SubscriptionService::trialDaysFor($price),
                     ])->all(),
                 ];
             })

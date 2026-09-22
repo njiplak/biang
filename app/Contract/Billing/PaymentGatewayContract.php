@@ -166,6 +166,21 @@ interface PaymentGatewayContract
     ): void;
 
     /**
+     * Push the date Dodo next charges a subscription, which is how a trial is
+     * actually extended.
+     *
+     * Section 10 lets sales "extend a trial ... without waiting for a deploy",
+     * but section 8 makes Dodo the merchant of record and a card-backed trial
+     * is just their subscription with its first days free. Their
+     * `next_billing_date` IS the end of the trial - so moving `trial_ends_at`
+     * on our side alone changes the countdown we show and nothing the customer
+     * is charged.
+     *
+     * @throws \App\Exceptions\Domain\TrialExtensionFailed
+     */
+    public function extendTrial(Subscription $subscription, \DateTimeInterface $trialEndsAt): void;
+
+    /**
      * What a plan change would cost, before it is made.
      *
      * Section 4 prices a switch as "the price difference is prorated", and

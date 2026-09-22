@@ -308,6 +308,7 @@ class CustomerService implements CustomerContract
      * an empty column, and the raw `type` ships alongside the label either way.
      */
     private const NOTIFICATION_LABELS = [
+        'trial_ending_7d' => 'Trial ending in 7 days',
         'trial_ending_3d' => 'Trial ending in 3 days',
         'trial_ending_1d' => 'Trial ending tomorrow',
         'trial_converted' => 'Trial converted',

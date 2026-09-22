@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\TrialExtensionFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
@@ -337,6 +338,34 @@ class DodoPaymentGateway implements PaymentGatewayContract
             );
         } catch (Throwable $e) {
             throw new CancellationFailed('the payment provider did not respond', $e);
+        }
+    }
+
+    /**
+     * Section 10's trial extension, carried to the side that actually charges.
+     *
+     * `next_billing_date` is the whole mechanism: a trial at Dodo is an
+     * ordinary subscription whose first charge is that date, so pushing it is
+     * both how the customer gets more free days and how the charge they were
+     * promised would wait is actually made to wait.
+     */
+    public function extendTrial(Subscription $subscription, DateTimeInterface $trialEndsAt): void
+    {
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new TrialExtensionFailed('this subscription is not held with the payment provider');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new TrialExtensionFailed('the payment provider is not configured');
+        }
+
+        try {
+            $this->client()->subscriptions->update(
+                subscriptionID: $subscription->dodo_subscription_id,
+                nextBillingDate: $trialEndsAt,
+            );
+        } catch (Throwable $e) {
+            throw new TrialExtensionFailed('the payment provider did not respond', $e);
         }
     }
 

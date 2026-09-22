@@ -344,8 +344,8 @@ export default function MembersIndex({
                     </div>
                 )}
 
-                {/* Section 12: the free tier has no payment account, so there is
-                    no seat to sell - the offer is a plan. */}
+                {/* Section 12: a workspace nobody is paying for has no payment
+                    account, so there is no seat to sell - the offer is a plan. */}
                 {atLimit && !seat_offer && (
                     <p className="text-sm text-muted-foreground">
                         All {seats.limit} seats are taken.{' '}

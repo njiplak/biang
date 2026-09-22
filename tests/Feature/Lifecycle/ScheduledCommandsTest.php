@@ -67,13 +67,50 @@ it('warns one day out', function () {
     expect(NotificationLog::where('type', 'trial_ending_1d')->count())->toBe(1);
 });
 
-it('says nothing in the quiet middle of a trial', function () {
+it('warns seven days out', function () {
     Notification::fake();
     startTrialEnding(7);
 
     $this->artisan('billing:trial-warnings')->assertSuccessful();
 
+    expect(NotificationLog::where('type', 'trial_ending_7d')->count())->toBe(1);
+});
+
+// Five is a real quiet day: past the seven-day notice, not yet at three.
+it('says nothing in the quiet middle of a trial', function () {
+    Notification::fake();
+    startTrialEnding(5);
+
+    $this->artisan('billing:trial-warnings')->assertSuccessful();
+
     Notification::assertNothingSent();
+});
+
+/*
+ * The gap that made an extension dangerous. Staff push the trial out, so the
+ * charge lands on a new date - and the customer is owed the same countdown
+ * before that one. Keyed on the milestone alone, the 3-day warning had already
+ * been "sent" and the customer heard nothing before the charge that happened.
+ */
+it('warns again at the same milestone once the trial is extended', function () {
+    Notification::fake();
+    $sub = startTrialEnding(3);
+
+    $this->artisan('billing:trial-warnings');
+
+    // Sales buys them another week; the charge moves with it.
+    $sub->update(['trial_ends_at' => now()->addDays(10)]);
+
+    // Quiet until the new date comes back around...
+    $this->artisan('billing:trial-warnings');
+    Notification::assertSentToTimes($this->owner, TrialEndingNotification::class, 1);
+
+    // ...and warned again when it does.
+    $this->travel(7)->days();
+    $this->artisan('billing:trial-warnings');
+
+    Notification::assertSentToTimes($this->owner, TrialEndingNotification::class, 2);
+    expect(NotificationLog::where('type', 'trial_ending_3d')->count())->toBe(2);
 });
 
 // Section 16's actual risk: the scheduler runs again, or a queue retries, and
@@ -93,13 +130,13 @@ it('never warns twice however often it runs', function () {
  * Section 4: "At the end of day 14 it charges automatically" - and since the
  * card is collected up front, DODO does that charging. What this command is
  * left with is the trial that has no card behind it: one granted by hand
- * (section 16). There is nothing to charge, so it drops to the free tier
- * exactly as a cancelled trial does.
+ * (section 16). There is nothing to charge, so it goes read-only exactly as a
+ * cancelled trial does.
  *
  * It used to convert these to Active regardless, which handed out the paid
  * product for free and made section 15's conversion rate meaningless.
  */
-it('drops a cardless trial to the free tier rather than granting it free', function () {
+it('makes a cardless trial read-only rather than granting it free', function () {
     Notification::fake();
     $sub = startTrialEnding(0);
     $sub->update(['trial_ends_at' => now()->subMinute()]);

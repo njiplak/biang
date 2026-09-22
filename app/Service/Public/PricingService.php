@@ -6,6 +6,7 @@ use App\Contract\Public\PricingContract;
 use App\Models\Feature;
 use App\Models\Plan;
 use App\Models\PlanPrice;
+use App\Service\Billing\SubscriptionService;
 
 /**
  * Section 11: "Pricing is published by our app and read by the marketing site,
@@ -19,9 +20,6 @@ use App\Models\PlanPrice;
  */
 class PricingService implements PricingContract
 {
-    /** Section 13.2 still lists confirming 14 days as open. */
-    private const TRIAL_DAYS = 14;
-
     public function published(): array
     {
         // `public()` is active AND is_public, so a retired plan and an
@@ -35,9 +33,18 @@ class PricingService implements PricingContract
 
         return [
             'plans' => $plans->map(fn (Plan $plan) => $this->planPayload($plan))->all(),
-            // Named separately so the marketing site can describe the trial
-            // without hardcoding a number that section 13.2 may still change.
-            'trial_days' => self::TRIAL_DAYS,
+            /*
+             * Named separately so the marketing site can describe the trial
+             * without hardcoding a number that section 13.2 may still change.
+             * The number itself comes from the service that GRANTS the days -
+             * a second copy here is how the pricing page came to advertise a
+             * different trial than the checkout actually sold.
+             *
+             * This is the headline figure. Whether a particular price is sold
+             * with a trial at all is answered per price below, because annual
+             * is not.
+             */
+            'trial_days' => SubscriptionService::TRIAL_DAYS,
             'signup_url' => route('register'),
             'generated_at' => now()->toIso8601String(),
         ];
@@ -71,6 +78,14 @@ class PricingService implements PricingContract
                             'plan' => $plan->code,
                             'interval' => $price->billing_interval->value,
                         ]),
+                        /*
+                         * Null means this price is bought outright, with no
+                         * free days - so the marketing site labels its button
+                         * "Buy" rather than "Start free trial". Annual is the
+                         * case that matters: a year charged unannounced on day
+                         * 15 is a chargeback waiting to happen.
+                         */
+                        'trial_days' => SubscriptionService::trialDaysFor($price),
                     ],
                 ])
                 ->all(),

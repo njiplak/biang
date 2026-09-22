@@ -26,6 +26,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'current_workspace_id',
         'trial_consumed_at',
         'trial_consumed_workspace_id',
+        'trial_checkout_at',
+        'trial_checkout_workspace_id',
         'last_seen_at',
     ];
 
@@ -42,6 +44,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'trial_consumed_at' => 'datetime',
+            'trial_checkout_at' => 'datetime',
             'last_seen_at' => 'datetime',
             // Encrypted at rest: a leaked backup must not hand over the seeds
             // needed to generate working codes.
@@ -66,6 +69,46 @@ class User extends Authenticatable implements MustVerifyEmail
     public function hasConsumedTrial(): bool
     {
         return $this->trial_consumed_at !== null;
+    }
+
+    /**
+     * How long a trial checkout holds this person's one trial before the claim
+     * lapses.
+     *
+     * Long enough for a card form plus the webhook that follows it, short
+     * enough that somebody who changed their mind is not locked out of
+     * trialling a different workspace for the rest of the day.
+     */
+    public const TRIAL_CHECKOUT_MINUTES = 30;
+
+    /**
+     * Whether this person has a trial checkout in flight for some OTHER
+     * workspace.
+     *
+     * Section 12's rule is one trial per person, ever, but hasConsumedTrial()
+     * cannot answer it on its own: consumption is recorded by Dodo's webhook,
+     * and until that lands the answer is false. Two tabs on two workspaces both
+     * passed and both got fourteen free days on one card.
+     *
+     * Scoped to a DIFFERENT workspace on purpose. Somebody who abandoned a
+     * checkout and is trying again on the same workspace is doing nothing
+     * wrong, and must never be locked out of their own retry.
+     */
+    public function hasTrialCheckoutPendingElsewhere(Workspace $workspace): bool
+    {
+        return $this->trial_checkout_at !== null
+            && $this->trial_checkout_at->gt(now()->subMinutes(self::TRIAL_CHECKOUT_MINUTES))
+            && $this->trial_checkout_workspace_id !== null
+            && $this->trial_checkout_workspace_id !== $workspace->id;
+    }
+
+    /** Stake the claim, at the moment the card form is handed over. */
+    public function rememberTrialCheckout(Workspace $workspace): void
+    {
+        $this->update([
+            'trial_checkout_at' => now(),
+            'trial_checkout_workspace_id' => $workspace->id,
+        ]);
     }
 
     /**

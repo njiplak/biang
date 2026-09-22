@@ -83,6 +83,99 @@ it('sends someone starting a trial to the card form', function () {
         ->and($this->owner->fresh()->hasConsumedTrial())->toBeFalse();
 });
 
+/*
+ * Annual is not sold with a trial. A trial auto-charges at the end, and a whole
+ * year arriving unannounced on day 15 is the most disputed shape in
+ * subscription billing - with a merchant of record that reaches us as a
+ * chargeback rather than a refund request.
+ */
+it('refuses to start a trial on a price that is not sold with one', function () {
+    $gateway = fakeGateway();
+
+    $annual = PlanPrice::whereHas('plan', fn ($q) => $q->where('code', 'pro'))
+        ->where('billing_interval', 'year')->firstOrFail();
+    $annual->update(['dodo_product_id' => 'prod_pro_year']);
+
+    $this->actingAs($this->owner)
+        ->post(route('billing.trial'), ['plan_price_id' => $annual->id])
+        ->assertSessionHasErrors('errors');
+
+    // Refused before the card form, and nothing sold behind their back.
+    expect($gateway->checkouts)->toBeEmpty();
+});
+
+// So the page can offer the button only where a trial actually follows.
+it('says per price whether it is sold with a trial', function () {
+    $this->actingAs($this->owner)
+        ->get(route('billing.index'))
+        ->assertOk()
+        ->assertInertia(function (AssertableInertia $page) {
+            $prices = collect($page->toArray()['props']['plans'])
+                ->firstWhere('code', 'pro')['prices'];
+
+            expect(collect($prices)->firstWhere('interval', 'month')['trial_days'])->toBe(14)
+                ->and(collect($prices)->firstWhere('interval', 'year')['trial_days'])->toBeNull();
+        });
+});
+
+/*
+ * Section 12's rule only became enforceable when the webhook landed. Two
+ * workspaces opened side by side both passed the eligibility check and both got
+ * fourteen free days on one card.
+ */
+it('refuses a second trial checkout while one is in flight elsewhere', function () {
+    $gateway = fakeGateway();
+
+    $this->actingAs($this->owner)
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
+        ->assertRedirect($gateway->checkoutUrl);
+
+    // A second workspace, same person, before any webhook has arrived.
+    $second = app(WorkspaceContract::class)->create($this->owner, 'Acme Two');
+    $this->owner->update(['current_workspace_id' => $second->id]);
+
+    $this->actingAs($this->owner->fresh())
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
+        ->assertSessionHasErrors('errors');
+
+    expect($gateway->checkouts)->toHaveCount(1);
+});
+
+// Abandoning a card form and trying again is not abuse, and must not be blocked.
+it('lets them retry the same workspace after abandoning the card form', function () {
+    $gateway = fakeGateway();
+
+    $this->actingAs($this->owner)
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
+        ->assertRedirect($gateway->checkoutUrl);
+
+    $this->actingAs($this->owner->fresh())
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
+        ->assertRedirect($gateway->checkoutUrl);
+
+    expect($gateway->checkouts)->toHaveCount(2);
+});
+
+// The claim is a hold, not a consumption: it lapses and leaves them their trial.
+it('lets the claim lapse so an abandoned checkout costs nobody their trial', function () {
+    $gateway = fakeGateway();
+
+    $this->actingAs($this->owner)
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id]);
+
+    $second = app(WorkspaceContract::class)->create($this->owner, 'Acme Two');
+    $this->owner->update(['current_workspace_id' => $second->id]);
+
+    $this->travel(User::TRIAL_CHECKOUT_MINUTES + 1)->minutes();
+
+    $this->actingAs($this->owner->fresh())
+        ->post(route('billing.trial'), ['plan_price_id' => $this->proPrice->id])
+        ->assertRedirect($gateway->checkoutUrl);
+
+    expect($gateway->checkouts)->toHaveCount(2)
+        ->and($this->owner->fresh()->hasConsumedTrial())->toBeFalse();
+});
+
 // Section 12: one trial per person, ever - surfaced as a message, not a crash.
 it('explains why a second trial is refused', function () {
     $gateway = fakeGateway();
@@ -128,8 +221,8 @@ it('blocks a downgrade that would not fit and says so', function () {
         ->and($this->workspace->fresh()->subscription->plan->code)->toBe('pro');
 });
 
-// Section 6: cancelling drops to free and deletes nothing.
-it('cancels to the free tier', function () {
+// Section 6: cancelling deletes nothing. It stops the writing, not the data.
+it('cancels to read-only', function () {
     app(SubscriptionContract::class)->grantPlan($this->workspace, $this->proPrice, AdminUser::factory()->create(), 'seed');
 
     $this->actingAs($this->owner)
@@ -207,9 +300,10 @@ it('moves a bought add-on from the shelf to the bill', function () {
             ->has('addons.available', 0));
 });
 
-// Section 12: free never touches the provider, so there is nothing to attach a
-// paid add-on to and the page must not pretend otherwise.
-it('offers no add-ons on the free tier', function () {
+// Section 12: a workspace nobody is paying for never reaches the provider, so
+// there is nothing to attach a paid add-on to and the page must not pretend
+// otherwise.
+it('offers no add-ons to an unpaid workspace', function () {
     $this->seed(Database\Seeders\AddonSeeder::class);
 
     $this->actingAs($this->owner)

@@ -188,9 +188,9 @@ it('closes dunning and restores the plan when payment recovers', function () {
 
 /*
  * Section 16's named risk, and section 12's rule for what cancelling means:
- * drop to the free tier, keep the data.
+ * stop the writing, keep the data.
  */
-it('drops to the free tier when they cancel on the provider page', function () {
+it('goes read-only when they cancel on the provider page', function () {
     ($this->send)(($this->event)('subscription.cancelled', [
         'cancelled_at' => now()->toIso8601String(),
     ]))->assertOk();

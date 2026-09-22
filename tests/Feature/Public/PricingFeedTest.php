@@ -3,6 +3,7 @@
 use App\Contract\Admin\CatalogContract;
 use App\Models\Feature;
 use App\Models\Plan;
+use App\Service\Billing\SubscriptionService;
 use App\Support\Features;
 use Database\Seeders\FeatureSeeder;
 use Database\Seeders\PlanSeeder;
@@ -29,6 +30,23 @@ it('publishes the public plans without a login', function () {
             'trial_days',
             'signup_url',
         ]);
+});
+
+/*
+ * The marketing site labels its buttons off this. Annual carries no trial - a
+ * year's fee charged automatically at the end of one is the most disputed shape
+ * in subscription billing - so "Start free trial" must not appear above it.
+ *
+ * The headline number and the per-price answer come from the one service that
+ * grants the days. A second copy of "14" here is how the pricing page came to
+ * advertise a trial the checkout did not sell.
+ */
+it('says per price whether it is sold with a trial', function () {
+    $this->getJson(route('pricing'))
+        ->assertOk()
+        ->assertJsonPath('trial_days', SubscriptionService::TRIAL_DAYS)
+        ->assertJsonPath('plans.1.prices.month.trial_days', SubscriptionService::TRIAL_DAYS)
+        ->assertJsonPath('plans.1.prices.year.trial_days', null);
 });
 
 /*

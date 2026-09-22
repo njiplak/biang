@@ -20,7 +20,10 @@ type ChosenPlan = {
     interval: string;
     currency: string;
     amount_minor: number;
-    trial_days: number;
+    // Null when this price is bought outright rather than trialled - annual is,
+    // because the charge at the end of a trial is automatic and a whole year
+    // arriving unannounced is a dispute rather than a conversion.
+    trial_days: number | null;
 };
 
 type Props = {
@@ -71,8 +74,10 @@ export default function Register({
                 invitedTo
                     ? 'Create your account to accept the invitation'
                     : plan
-                      ? `Start your ${plan.trial_days}-day ${plan.name} trial`
-                      : 'No card required to start'
+                      ? plan.trial_days === null
+                          ? `Subscribe to ${plan.name}`
+                          : `Start your ${plan.trial_days}-day ${plan.name} trial`
+                      : 'Pick a plan once your workspace is set up'
             }
         >
             <Head title="Sign up" />
@@ -84,7 +89,9 @@ export default function Register({
                     <span className="font-medium">{plan.name}</span>
                     <span className="text-muted-foreground">
                         {money(plan.amount_minor, plan.currency)}/
-                        {plan.interval} after {plan.trial_days} days
+                        {plan.interval}
+                        {plan.trial_days !== null &&
+                            ` after ${plan.trial_days} days`}
                     </span>
                 </div>
             )}

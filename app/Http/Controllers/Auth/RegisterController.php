@@ -88,7 +88,10 @@ class RegisterController extends Controller
                 'interval' => $price->billing_interval->value,
                 'currency' => $price->currency,
                 'amount_minor' => $price->amount_minor,
-                'trial_days' => SubscriptionService::TRIAL_DAYS,
+                // Null when this price is not sold with a trial, so the form
+                // promises a trial only where one actually follows. Annual is
+                // bought outright - see SubscriptionService::trialDaysFor.
+                'trial_days' => SubscriptionService::trialDaysFor($price),
             ],
             // Prefills the form and tells the page why it is asking.
             'invitedEmail' => $invitation?->email,

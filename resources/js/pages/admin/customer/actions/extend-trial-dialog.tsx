@@ -54,7 +54,10 @@ export function ExtendTrialDialog({
                         <DialogTitle>Extend the trial</DialogTitle>
                         <DialogDescription>
                             Days are added on top of what is left, not counted
-                            from today. The plan does not change.
+                            from today. The plan does not change. The payment
+                            provider's billing date moves with it, so the card
+                            is charged on the new date — if they cannot be
+                            reached, nothing moves and the trial is left alone.
                         </DialogDescription>
                     </DialogHeader>
 

@@ -2,6 +2,7 @@
 
 namespace App\Service\Billing;
 
+use App\Contract\Billing\BillingNotifierContract;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
@@ -25,8 +26,14 @@ use App\Models\Subscription;
 use App\Models\SubscriptionItem;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Notifications\Billing\AddonChangedNotification;
+use App\Notifications\Billing\PlanChangedNotification;
+use App\Notifications\Billing\SubscriptionCanceledNotification;
 use App\Support\Features;
+use Carbon\CarbonInterface;
+use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * OUR subscription state, not a mirror of Dodo's.
@@ -51,6 +58,7 @@ class SubscriptionService implements SubscriptionContract
         private readonly EntitlementContract $entitlements,
         private readonly MembershipContract $memberships,
         private readonly PaymentGatewayContract $gateway,
+        private readonly BillingNotifierContract $notifier,
     ) {}
 
     public function startTrial(Workspace $workspace, PlanPrice $price, User $startedBy): Subscription
@@ -194,7 +202,9 @@ class SubscriptionService implements SubscriptionContract
             $this->gateway->changeSubscriptionPlan($subscription, $price, $this->providerAddons($subscription));
         }
 
-        return DB::transaction(function () use ($workspace, $subscription, $price) {
+        $fromPlan = $subscription->plan->name;
+
+        $changed = DB::transaction(function () use ($workspace, $subscription, $price) {
             $subscription->update([
                 'plan_id' => $price->plan_id,
                 'plan_price_id' => $price->id,
@@ -211,6 +221,12 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'plan_changed', $changed, PlanChangedNotification::for(
+            $workspace, $fromPlan, $price, $changed->isHeldWithProvider(),
+        ));
+
+        return $changed;
     }
 
     /**
@@ -298,6 +314,117 @@ class SubscriptionService implements SubscriptionContract
     }
 
     /**
+     * The customer's own cancel button. Scheduled for the end of the period
+     * they have already paid for, so an annual customer who leaves in month two
+     * keeps the ten months they paid for instead of losing them with no refund.
+     *
+     * Falls back to cancelling now when there is no paid period to honour: a
+     * plan granted by hand (nothing is charged), or a subscription already past
+     * due (the period was never paid for).
+     */
+    public function cancelAtPeriodEnd(
+        Workspace $workspace,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void {
+        $subscription = $this->liveSubscription($workspace);
+        $endsAt = $subscription === null ? null : $this->paidThrough($subscription);
+
+        if ($subscription === null || $endsAt === null) {
+            $this->cancel($workspace, $feedback, $comment);
+
+            if ($subscription !== null) {
+                $this->notify($workspace, 'subscription_canceled', $subscription, new SubscriptionCanceledNotification(
+                    $workspace, $subscription->plan->name, null,
+                ));
+            }
+
+            return;
+        }
+
+        // Pressing cancel twice is not a second cancellation, and not a second email.
+        if ($subscription->cancel_at_period_end) {
+            return;
+        }
+
+        // Dodo first, for the reason cancel() gives: if they refuse, nothing here moves.
+        $this->gateway->cancelSubscription($subscription, true, $feedback, $comment);
+
+        /*
+         * canceled_at stays null until the subscription actually ends: the
+         * churn figures count it, and a customer who is still paying (and may
+         * yet resume) has not churned. Their answer is kept now, though -
+         * asking again at the period end would mean asking someone who left.
+         */
+        $subscription->update([
+            'cancel_at_period_end' => true,
+            'cancellation_feedback' => $feedback,
+            'cancellation_comment' => $comment,
+        ]);
+
+        $this->notify($workspace, 'subscription_canceled', $subscription, new SubscriptionCanceledNotification(
+            $workspace, $subscription->plan->name, $endsAt,
+        ));
+    }
+
+    /**
+     * Undo cancelAtPeriodEnd before the period runs out. After it has run out
+     * the subscription is gone at Dodo too, and coming back is a new checkout.
+     */
+    public function resume(Workspace $workspace): void
+    {
+        $subscription = $this->requireSubscription($workspace);
+
+        // Nothing scheduled: it is already renewing, which is what was asked for.
+        if (! $subscription->cancel_at_period_end) {
+            return;
+        }
+
+        $this->gateway->resumeSubscription($subscription);
+
+        $subscription->update([
+            'cancel_at_period_end' => false,
+            'cancellation_feedback' => null,
+            'cancellation_comment' => null,
+        ]);
+    }
+
+    /**
+     * The date a scheduled cancellation takes effect, or null when there is no
+     * paid period left to run out. A trial runs to its end: cancelling on day
+     * three still leaves the rest of the fourteen days, uncharged.
+     */
+    public function paidThrough(Subscription $subscription): ?CarbonInterface
+    {
+        if (! $subscription->isHeldWithProvider()) {
+            return null;
+        }
+
+        $end = match ($subscription->status) {
+            SubscriptionStatus::Trialing => $subscription->trial_ends_at ?? $subscription->current_period_end,
+            SubscriptionStatus::Active => $subscription->current_period_end,
+            default => null,
+        };
+
+        return $end?->isFuture() ? $end : null;
+    }
+
+    /**
+     * A confirmation for something the customer just did. Keyed uniquely per
+     * action because each one is its own event; sendOnce is used for its
+     * recipient rules and its log, not to collapse repeats.
+     */
+    private function notify(Workspace $workspace, string $type, Subscription $subscription, Notification $notification): void
+    {
+        $this->notifier->sendOnce(
+            $workspace,
+            $type,
+            "{$type}:sub_{$subscription->id}:".Str::ulid(),
+            fn () => $notification,
+        );
+    }
+
+    /**
      * Section 4: three kinds of add-on, charged differently, but all resolving
      * through the SAME entitlement path as the plan's own allowance.
      *
@@ -332,7 +459,7 @@ class SubscriptionService implements SubscriptionContract
         // locked table.
         $this->chargeAddons($subscription, $price, $resolved);
 
-        return DB::transaction(function () use ($workspace, $subscription, $addon, $price, $resolved) {
+        $updated = DB::transaction(function () use ($workspace, $subscription, $addon, $price, $resolved) {
             $item = SubscriptionItem::withoutWorkspaceScope()
                 ->where('subscription_id', $subscription->id)
                 ->where('addon_id', $addon->id)
@@ -355,6 +482,12 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'addon_changed', $updated, new AddonChangedNotification(
+            $workspace, $addon->name, $resolved, $updated->isHeldWithProvider(),
+        ));
+
+        return $updated;
     }
 
     public function changeAddonQuantity(Workspace $workspace, Addon $addon, int $quantity): Subscription
@@ -382,7 +515,7 @@ class SubscriptionService implements SubscriptionContract
             $this->chargeAddons($subscription, $item->addonPrice, max(0, $quantity));
         }
 
-        return DB::transaction(function () use ($workspace, $subscription, $item, $quantity) {
+        $updated = DB::transaction(function () use ($workspace, $subscription, $item, $quantity) {
             $quantity <= 0
                 ? $item->delete()
                 : $item->update(['quantity' => $quantity]);
@@ -391,6 +524,12 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'addon_changed', $updated, new AddonChangedNotification(
+            $workspace, $addon->name, max(0, $quantity), $updated->isHeldWithProvider(),
+        ));
+
+        return $updated;
     }
 
     /**

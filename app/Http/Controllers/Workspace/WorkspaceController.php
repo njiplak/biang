@@ -132,6 +132,8 @@ class WorkspaceController extends Controller
 
         return Inertia::render('workspace/settings', [
             'workspace' => $workspace->only(['ulid', 'name', 'slug']),
+            // So the close warning can say how long it stays restorable.
+            'retention_days' => (int) config('workspace.retention_days'),
             'can' => [
                 'rename' => Gate::allows('update', $workspace),
                 /*
@@ -173,6 +175,26 @@ class WorkspaceController extends Controller
         $this->audit->record('workspace.closed', $workspace, $workspace);
 
         return redirect()->route('dashboard');
+    }
+
+    /**
+     * Section 6: undo a close inside the retention window. The subscription
+     * ended when it closed, so it comes back read-only and the owner lands on
+     * billing, where writing is turned back on.
+     */
+    public function restore(Workspace $workspace): RedirectResponse
+    {
+        Gate::authorize('restore', $workspace);
+
+        $workspace = $this->service->reopenWorkspace($workspace);
+
+        $this->audit->record('workspace.restored', $workspace, $workspace);
+
+        $user = request()->user();
+        $user->update(['current_workspace_id' => $workspace->id]);
+        request()->session()->put('current_workspace_id', $workspace->id);
+
+        return redirect()->route('billing.index');
     }
 
     public function update(WorkspaceRequest $request, Workspace $workspace): RedirectResponse

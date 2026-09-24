@@ -142,8 +142,13 @@ class WorkspaceService implements WorkspaceContract
         return DB::transaction(function () use ($workspace) {
             $workspace->restore();
 
+            // Closing overwrites access_status but leaves suspended_at alone,
+            // so a suspension survives the round trip instead of being lifted
+            // by closing and reopening.
             $workspace->update([
-                'access_status' => AccessStatus::Active,
+                'access_status' => $workspace->suspended_at !== null
+                    ? AccessStatus::Suspended
+                    : AccessStatus::Active,
                 'purge_after' => null,
             ]);
 

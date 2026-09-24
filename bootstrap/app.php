@@ -15,6 +15,8 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -149,5 +151,36 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return back()->withErrors(['errors' => $e->userMessage()]);
+        });
+
+        /*
+         * Customers never see a bare framework error page. A member sent
+         * somewhere they may not go, or a link to something that is gone, gets
+         * a page that says what happened and how to get back.
+         */
+        $exceptions->respond(function (SymfonyResponse $response, Throwable $e, Request $request) {
+            // JSON callers and the provider's webhooks want the status, not a page.
+            if ($request->is('api/*') || ($request->expectsJson() && ! $request->header('X-Inertia'))) {
+                return $response;
+            }
+
+            $status = $response->getStatusCode();
+
+            // An expired session on a form: send them back to try again rather
+            // than to a "Page Expired" screen with no way forward.
+            if ($status === 419) {
+                // 303 so a PUT or DELETE is followed with a GET; this runs before
+                // the Inertia middleware that would otherwise convert it.
+                return back(303)->with('warning', 'That page had expired, so nothing was saved. Please try again.');
+            }
+
+            // Local and test runs keep the framework's pages and stack traces.
+            if (app()->environment(['local', 'testing']) || ! in_array($status, [403, 404, 500, 503], true)) {
+                return $response;
+            }
+
+            return Inertia::render('error', ['status' => $status])
+                ->toResponse($request)
+                ->setStatusCode($status);
         });
     })->create();

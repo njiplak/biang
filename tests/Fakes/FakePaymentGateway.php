@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\ResumeFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
@@ -62,6 +63,9 @@ class FakePaymentGateway implements PaymentGatewayContract
 
     /** @var list<array<string, mixed>> */
     public array $cancellations = [];
+
+    /** @var list<string> provider subscription ids, in call order */
+    public array $resumptions = [];
 
     /**
      * What Dodo would say about a subscription, keyed by their id. Shaped like
@@ -227,6 +231,19 @@ class FakePaymentGateway implements PaymentGatewayContract
             'feedback' => $feedback?->value,
             'comment' => $comment,
         ];
+    }
+
+    public function resumeSubscription(Subscription $subscription): void
+    {
+        if ($this->broken) {
+            throw new ResumeFailed('the payment provider did not respond');
+        }
+
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new ResumeFailed('this subscription is not held with the payment provider');
+        }
+
+        $this->resumptions[] = $subscription->dodo_subscription_id;
     }
 
     /**

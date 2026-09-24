@@ -302,16 +302,27 @@ class BillingController extends Controller
      * Section 15 wants voluntary churn split by reason, so the answer rides
      * along - optional, always. `routes/web/billing.php` commits to never
      * blocking the exit, and a required question is a block.
+     *
+     * Scheduled for the end of the paid period, so leaving never forfeits time
+     * the customer has already paid for.
      */
     public function cancel(CancelSubscriptionRequest $request): RedirectResponse
     {
         $feedback = $request->validated('feedback');
 
-        $this->subscriptions->cancel(
+        $this->subscriptions->cancelAtPeriodEnd(
             $this->workspace(),
             $feedback === null ? null : CancellationFeedback::from($feedback),
             $request->validated('comment'),
         );
+
+        return back();
+    }
+
+    /** Take back a scheduled cancellation while the paid period is still running. */
+    public function resume(): RedirectResponse
+    {
+        $this->subscriptions->resume($this->workspace());
 
         return back();
     }
@@ -378,6 +389,11 @@ class BillingController extends Controller
             'billing_source' => $subscription->billing_source->value,
             'trial_ends_at' => $subscription->trial_ends_at,
             'current_period_end' => $subscription->current_period_end,
+            // The renewal is cancelled and access ends at current_period_end
+            // (or trial_ends_at while trialing) unless they resume first.
+            'cancel_at_period_end' => $subscription->cancel_at_period_end,
+            // When pressing cancel today would end access; null means at once.
+            'paid_through' => $this->subscriptions->paidThrough($subscription),
             'amount_minor' => $subscription->planPrice->amount_minor,
             'currency' => $subscription->planPrice->currency,
             'interval' => $subscription->planPrice->billing_interval->value,

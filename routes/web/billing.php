@@ -49,6 +49,9 @@ Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () 
         ->middleware('verified')->name('plan.preview');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
 
+    // Verified like every other action that keeps charging a card.
+    Route::post('resume', [BillingController::class, 'resume'])->middleware('verified')->name('resume');
+
     // Section 4's three add-on kinds. Entitlements move now; money follows in
     // phase 4, when Dodo becomes the merchant of record for the charge.
     Route::post('addons', [BillingController::class, 'purchaseAddon'])->middleware('verified')->name('addon.store');

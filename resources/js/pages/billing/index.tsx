@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { CreditCard, ExternalLink } from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
+import type { SharedData } from '@/types';
 import { CancelDialog } from './cancel-dialog';
 import { SwitchPlanDialog } from './switch-plan-dialog';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,10 @@ type Props = {
         billing_source: string;
         trial_ends_at: string | null;
         current_period_end: string | null;
+        // cancelled at the period end; access runs until paid_through
+        cancel_at_period_end: boolean;
+        // when cancelling would take effect; null means immediately
+        paid_through: string | null;
         amount_minor: number;
         currency: string;
         interval: string;
@@ -193,6 +198,20 @@ function CurrentPlan({
     subscription: Props['subscription'];
     hasPaymentAccount: boolean;
 }) {
+    const supportUrl = usePage<SharedData>().props.support?.url ?? null;
+    const [resuming, setResuming] = useState(false);
+
+    const resume = () =>
+        router.post(
+            '/billing/resume',
+            {},
+            {
+                preserveScroll: true,
+                onStart: () => setResuming(true),
+                onFinish: () => setResuming(false),
+            },
+        );
+
     return (
         <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-muted-foreground">
@@ -200,22 +219,44 @@ function CurrentPlan({
             </h2>
 
             {subscription ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-3 text-sm">
-                    <span>
-                        {subscription.plan} ·{' '}
-                        {money(
-                            subscription.amount_minor,
-                            subscription.currency,
-                        )}
-                        /{subscription.interval}
-                        {subscription.billing_source === 'manual' &&
-                            ' · granted by our team'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                        {/* Never a bare button. Cancelling now takes away the
-                            ability to work, so it says so first. */}
-                        <CancelDialog />
-                    </span>
+                <div className="flex flex-col gap-1 border-t border-border py-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                            {subscription.plan} ·{' '}
+                            {money(
+                                subscription.amount_minor,
+                                subscription.currency,
+                            )}
+                            /{subscription.interval}
+                            {subscription.billing_source === 'manual' &&
+                                ' · granted by our team'}
+                        </span>
+                        <span className="flex items-center gap-1">
+                            {subscription.cancel_at_period_end ? (
+                                /* Only while there is time left to keep. */
+                                subscription.paid_through && (
+                                    <Button
+                                        size="sm"
+                                        disabled={resuming}
+                                        onClick={resume}
+                                    >
+                                        Resume subscription
+                                    </Button>
+                                )
+                            ) : (
+                                /* Never a bare button: it says what happens
+                                   and when before anything is cancelled. */
+                                <CancelDialog
+                                    paidThrough={subscription.paid_through}
+                                />
+                            )}
+                        </span>
+                    </div>
+                    {/* "When will I be charged, and how much?" answered on
+                        the page instead of in a support ticket. */}
+                    <p className="text-muted-foreground">
+                        <RenewalLine subscription={subscription} />
+                    </p>
                 </div>
             ) : (
                 <p className="border-t border-border py-3 text-sm text-muted-foreground">
@@ -242,8 +283,80 @@ function CurrentPlan({
                     </Button>
                 </div>
             )}
+
+            {supportUrl && (
+                <p className="text-sm text-muted-foreground">
+                    Questions about your plan or a charge?{' '}
+                    <a
+                        href={supportUrl}
+                        className="underline underline-offset-4"
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        Contact us
+                    </a>
+                </p>
+            )}
         </section>
     );
+}
+
+const date = (value: string) => new Date(value).toLocaleDateString();
+
+/** One sentence: what happens next, on what date, for how much. */
+function RenewalLine({
+    subscription,
+}: {
+    subscription: NonNullable<Props['subscription']>;
+}) {
+    const price = `${money(subscription.amount_minor, subscription.currency)}/${subscription.interval}`;
+
+    if (subscription.cancel_at_period_end) {
+        // No date left means the period has run out and the provider's
+        // confirmation has not reached us yet.
+        return subscription.paid_through ? (
+            <>
+                Cancelled. Everything keeps working until{' '}
+                {date(subscription.paid_through)}, then the workspace becomes
+                read-only. You will not be charged again.
+            </>
+        ) : (
+            <>Cancelled and ending now. You will not be charged again.</>
+        );
+    }
+
+    if (subscription.billing_source === 'manual') {
+        return <>Granted by our team — you are not charged for it.</>;
+    }
+
+    if (subscription.status === 'past_due') {
+        return (
+            <>
+                The last payment did not go through. Update your card to keep
+                this plan.
+            </>
+        );
+    }
+
+    if (subscription.status === 'trialing' && subscription.trial_ends_at) {
+        return (
+            <>
+                Free trial until {date(subscription.trial_ends_at)}. Your card
+                is then charged {price} automatically, plus any add-ons and tax.
+            </>
+        );
+    }
+
+    if (subscription.current_period_end) {
+        return (
+            <>
+                Renews on {date(subscription.current_period_end)} at {price},
+                plus any add-ons and tax.
+            </>
+        );
+    }
+
+    return null;
 }
 
 /**

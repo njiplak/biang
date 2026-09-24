@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\WorkspaceRole;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Models\Plan;
+use App\Models\Workspace;
 use App\Service\Billing\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -30,7 +32,39 @@ class DashboardController extends Controller
         // that no longer exists.
         return Inertia::render('dashboard', [
             'pending_plan' => $this->pendingPlan($request),
+            'closed_workspaces' => $this->closedWorkspaces($request),
         ]);
+    }
+
+    /**
+     * Section 6 promises a closed workspace is recoverable until its purge
+     * date, and this is where that promise can be kept: the switcher no longer
+     * lists it, so without this nobody could find it to bring it back.
+     *
+     * Owners only, matching WorkspacePolicy::restore - listing it to someone
+     * who cannot restore it would be a button that only ever says no.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function closedWorkspaces(Request $request): array
+    {
+        $owned = $request->user()->memberships()
+            ->where('role', WorkspaceRole::Owner)
+            ->pluck('workspace_id');
+
+        return Workspace::onlyTrashed()
+            ->whereIn('id', $owned)
+            ->whereNull('anonymized_at')
+            ->where('purge_after', '>', now())
+            ->orderBy('purge_after')
+            ->get(['id', 'ulid', 'name', 'purge_after'])
+            ->map(fn (Workspace $workspace) => [
+                'ulid' => $workspace->ulid,
+                'name' => $workspace->name,
+                'restorable_until' => $workspace->purge_after,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

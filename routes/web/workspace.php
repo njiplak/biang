@@ -23,6 +23,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('{workspace}/settings', [WorkspaceController::class, 'settings'])->name('settings');
         Route::put('{workspace}', [WorkspaceController::class, 'update'])->name('update');
         Route::delete('{workspace}', [WorkspaceController::class, 'destroy'])->name('destroy');
+        // withTrashed: a closed workspace is soft-deleted, and restoring one is
+        // the only route that must still find it. The policy does the gating.
+        Route::post('{workspace}/restore', [WorkspaceController::class, 'restore'])
+            ->withTrashed()->name('restore');
         Route::post('{workspace}/switch', [WorkspaceController::class, 'switchTo'])->name('switch');
         Route::post('{workspace}/transfer', [WorkspaceController::class, 'transferOwnership'])->name('transfer');
 

@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Plus, Sparkles } from 'lucide-react';
+import { Plus, RotateCcw, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import CreateWorkspaceDialog from '@/components/create-workspace-dialog';
 import AppLayout from '@/layouts/app-layout';
@@ -10,13 +10,19 @@ type Props = {
     // The plan carried through signup from the marketing site, still waiting
     // to be acted on. Null once it has been spent, or if none was chosen.
     pending_plan: { name: string; trial_days: number | null } | null;
+    // Section 6: closed workspaces this person owns that can still be restored.
+    closed_workspaces: {
+        ulid: string;
+        name: string;
+        restorable_until: string;
+    }[];
 };
 
 /**
  * Section 2: one person, many workspaces, a different job in each - so this is
  * the switcher, and it reads across every workspace they belong to.
  */
-export default function Dashboard({ pending_plan }: Props) {
+export default function Dashboard({ pending_plan, closed_workspaces }: Props) {
     // Same list the switcher uses - one source, shared on every page.
     const { tenancy } = usePage<SharedData>().props;
     const workspaces = tenancy?.available ?? [];
@@ -118,6 +124,52 @@ export default function Dashboard({ pending_plan }: Props) {
                             </li>
                         ))}
                     </ul>
+                )}
+
+                {closed_workspaces.length > 0 && (
+                    <section className="flex flex-col gap-2">
+                        <h2 className="text-sm font-medium text-muted-foreground">
+                            Recently closed
+                        </h2>
+                        <ul className="flex flex-col">
+                            {closed_workspaces.map((workspace) => (
+                                <li
+                                    key={workspace.ulid}
+                                    className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-3 text-sm"
+                                >
+                                    <span className="flex flex-col">
+                                        <span className="font-medium">
+                                            {workspace.name}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            Can be restored until{' '}
+                                            {new Date(
+                                                workspace.restorable_until,
+                                            ).toLocaleDateString()}
+                                            . After that it is anonymised.
+                                        </span>
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            router.post(
+                                                `/workspaces/${workspace.ulid}/restore`,
+                                            )
+                                        }
+                                    >
+                                        <RotateCcw className="size-4" />
+                                        Restore
+                                    </Button>
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-xs text-muted-foreground">
+                            A restored workspace comes back read-only, with all
+                            its data. Choose a plan to start making changes
+                            again.
+                        </p>
+                    </section>
                 )}
             </div>
 

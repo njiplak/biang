@@ -144,7 +144,7 @@ class HandleInertiaRequests extends Middleware
         $current = app(CurrentWorkspace::class)->get();
 
         return [
-            'current' => $current === null ? null : $this->currentPayload($current),
+            'current' => $current === null ? null : $this->currentPayload($current, $user),
             // Reads across every workspace: the switcher is the reason
             // workspace_members is deliberately never tenant-scoped.
             'available' => $user->memberships()->with('workspace')->get()
@@ -162,7 +162,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /** @return array<string, mixed> */
-    private function currentPayload(Workspace $workspace): array
+    private function currentPayload(Workspace $workspace, User $user): array
     {
         $state = $workspace->displayState();
         $subscription = $workspace->subscription()->first();
@@ -180,6 +180,16 @@ class HandleInertiaRequests extends Middleware
             'over_limit_features' => $workspace->over_limit_features,
             'grace_ends_at' => $workspace->grace_ends_at,
             'trial_ends_at' => $subscription?->trial_ends_at,
+            // A scheduled cancellation: access continues until the period end.
+            'cancel_at_period_end' => (bool) $subscription?->cancel_at_period_end,
+            'current_period_end' => $subscription?->current_period_end,
+            /*
+             * The banners point billing roles at /billing and everyone else at
+             * the person who can fix it. A member sent to a page they cannot
+             * open gets a 403 and no idea who to ask.
+             */
+            'can_manage_billing' => $user->roleIn($workspace)?->canManageBilling() === true,
+            'owner_name' => $workspace->owners()->with('user:id,name')->first()?->user?->name,
             /*
              * Counted here rather than in the banner. The countdown needs "now",
              * and reading the clock while React renders is impure - the same

@@ -10,6 +10,7 @@ use App\Models\PlanPrice;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\Workspace;
+use Carbon\CarbonInterface;
 
 interface SubscriptionContract
 {
@@ -73,6 +74,26 @@ interface SubscriptionContract
      * Section 4: buy a quantity add-on, a paid unlock, or metered capacity.
      * Entitlements move immediately; money follows in phase 4.
      */
+    /**
+     * The customer's cancel: scheduled for the end of the paid period when
+     * there is one, immediate otherwise. cancel() stays immediate for callers
+     * that must stop now (closing a workspace, ending a card-less trial).
+     */
+    public function cancelAtPeriodEnd(
+        Workspace $workspace,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void;
+
+    /**
+     * When cancelAtPeriodEnd would take effect, or null when it would cancel
+     * immediately (a plan granted by hand, or one already past due).
+     */
+    public function paidThrough(Subscription $subscription): ?CarbonInterface;
+
+    /** Undo cancelAtPeriodEnd while the paid period is still running. */
+    public function resume(Workspace $workspace): void;
+
     public function purchaseAddon(Workspace $workspace, AddonPrice $price, int $quantity = 1): Subscription;
 
     /** Zero removes the item. Throws DowngradeBlocked if the capacity is in use. */

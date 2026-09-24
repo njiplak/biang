@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     CreditCard,
     LayoutDashboard,
+    LifeBuoy,
     LogOut,
     Settings,
     UserCog,
@@ -50,6 +51,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
     const { sidebarOpen: isOpen, auth, tenancy } = page.props;
     const current = tenancy?.current ?? null;
     const currentUrl = page.url;
+    // Set by staff in the console; the link is hidden until there is one.
+    const supportUrl = page.props.support?.url ?? null;
 
     const isMenuActive = (href: string) =>
         currentUrl === href || currentUrl.startsWith(href + '/');
@@ -134,6 +137,22 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
                 <SidebarFooter>
                     <SidebarMenu>
+                        {/* A customer with a question about a charge who finds
+                            no way to ask us asks their bank instead. */}
+                        {supportUrl && (
+                            <SidebarMenuItem>
+                                <SidebarMenuButton asChild>
+                                    <a
+                                        href={supportUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        <LifeBuoy />
+                                        <span>Help &amp; support</span>
+                                    </a>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        )}
                         <SidebarMenuItem>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

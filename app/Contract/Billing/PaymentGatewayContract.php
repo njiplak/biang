@@ -166,6 +166,15 @@ interface PaymentGatewayContract
     ): void;
 
     /**
+     * Undo a cancellation scheduled with $atPeriodEnd, so the subscription
+     * renews as normal. Only meaningful before the period ends; once Dodo has
+     * cancelled it there is nothing left to resume and a new checkout is needed.
+     *
+     * @throws \App\Exceptions\Domain\ResumeFailed
+     */
+    public function resumeSubscription(Subscription $subscription): void;
+
+    /**
      * What a plan change would cost, before it is made.
      *
      * Section 4 prices a switch as "the price difference is prorated", and

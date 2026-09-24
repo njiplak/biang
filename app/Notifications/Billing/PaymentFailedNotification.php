@@ -3,6 +3,7 @@
 namespace App\Notifications\Billing;
 
 use App\Models\Workspace;
+use App\Notifications\Billing\Concerns\MentionsSupport;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +24,7 @@ use Illuminate\Notifications\Notification;
  */
 class PaymentFailedNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use MentionsSupport, Queueable;
 
     public function __construct(
         private readonly Workspace $workspace,
@@ -38,7 +39,7 @@ class PaymentFailedNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
+        return $this->withSupportLine((new MailMessage)
             ->subject("We could not take payment for {$this->workspace->name}")
             ->greeting('A payment did not go through')
             ->line("The last payment for {$this->workspace->name} was declined. It is usually an expired card or a bank that blocked the charge.")
@@ -47,6 +48,6 @@ class PaymentFailedNotification extends Notification implements ShouldQueue
             ->line('Nothing has changed yet. Everyone on your team keeps full access while we retry.')
             ->line("If it is still unpaid on {$this->graceEndsAt->toFormattedDayDateString()}, the workspace becomes read-only — you would keep everything and could still export it, but nobody could make changes.")
             ->action('Update payment details', url('/billing'))
-            ->line('Updating the card fixes this immediately, and the retry usually goes through within a day.');
+            ->line('Updating the card fixes this immediately, and the retry usually goes through within a day.'));
     }
 }

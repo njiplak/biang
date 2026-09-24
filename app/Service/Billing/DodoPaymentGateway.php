@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\ResumeFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
 use App\Models\Subscription;
@@ -337,6 +338,28 @@ class DodoPaymentGateway implements PaymentGatewayContract
             );
         } catch (Throwable $e) {
             throw new CancellationFailed('the payment provider did not respond', $e);
+        }
+    }
+
+    public function resumeSubscription(Subscription $subscription): void
+    {
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new ResumeFailed('this subscription is not held with the payment provider');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new ResumeFailed('the payment provider is not configured');
+        }
+
+        try {
+            // false, not null: the SDK drops nulls, and an omitted flag leaves
+            // the scheduled cancellation in place.
+            $this->client()->subscriptions->update(
+                subscriptionID: $subscription->dodo_subscription_id,
+                cancelAtNextBillingDate: false,
+            );
+        } catch (Throwable $e) {
+            throw new ResumeFailed('the payment provider did not respond', $e);
         }
     }
 

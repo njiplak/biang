@@ -78,7 +78,9 @@ it('never makes anyone answer to leave', function () {
 
     $subscription = $this->workspace->subscriptions()->withoutWorkspaceScope()->first();
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid)
+    // Scheduled for the period end: still paid up, so still working until then.
+    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Active)
+        ->and($subscription->cancel_at_period_end)->toBeTrue()
         ->and($subscription->cancellation_feedback)->toBeNull()
         ->and($this->gateway->cancellations)->toHaveCount(1);
 });
@@ -89,7 +91,10 @@ it('accepts a reason with no comment, and a comment with no reason', function (a
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    expect($this->workspace->fresh()->billing_status)->toBe(BillingStatus::Unpaid);
+    $subscription = $this->workspace->subscriptions()->withoutWorkspaceScope()->first();
+
+    expect($subscription->cancel_at_period_end)->toBeTrue()
+        ->and($this->gateway->cancellations)->toHaveCount(1);
 })->with([
     'reason only' => [['feedback' => 'unused']],
     'comment only' => [['comment' => 'Just trying it out.']],

@@ -10,6 +10,17 @@ import type { RevenueSummary } from '@/types/customer';
 type Props = {
     admin: { name: string; email: string };
     revenue: RevenueSummary | null;
+    // Section 15's funnel over 30 days, in order; null without revenue.view.
+    funnel: { step: string; count: number }[] | null;
+};
+
+const STEP_LABELS: Record<string, string> = {
+    signed_up: 'Signed up',
+    email_verified: 'Verified email',
+    workspace_created: 'Workspace created',
+    checkout_started: 'Opened checkout',
+    trial_started: 'Started trial',
+    subscription_activated: 'Paying',
 };
 
 function money(minor: number, currency: string) {
@@ -20,7 +31,11 @@ function money(minor: number, currency: string) {
 }
 
 /** Section 10's six jobs. Each links to the screen that does it. */
-export default function AdminDashboard({ admin: staff, revenue }: Props) {
+export default function AdminDashboard({
+    admin: staff,
+    revenue,
+    funnel,
+}: Props) {
     return (
         <div className="flex flex-col gap-4">
             <Head title="Staff console" />
@@ -31,6 +46,30 @@ export default function AdminDashboard({ admin: staff, revenue }: Props) {
                     Signed in as {staff.name} ({staff.email})
                 </p>
             </div>
+
+            {funnel && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">
+                            Signup funnel (last 30 days)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm">
+                        <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                            {funnel.map((row) => (
+                                <li key={row.step} className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">
+                                        {STEP_LABELS[row.step] ?? row.step}
+                                    </span>
+                                    <span className="text-lg font-semibold">
+                                        {row.count}
+                                    </span>
+                                </li>
+                            ))}
+                        </ol>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Section 10: "Understand the business." Finance only. */}
             {revenue && (

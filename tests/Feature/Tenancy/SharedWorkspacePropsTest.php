@@ -43,7 +43,7 @@ it('lists every workspace the person belongs to, with their role in each', funct
 });
 
 it('shares nothing for a guest', function () {
-    $this->get(route('home'))
+    $this->get(route('login'))
         ->assertInertia(fn (AssertableInertia $page) => $page->where('tenancy', null));
 });
 

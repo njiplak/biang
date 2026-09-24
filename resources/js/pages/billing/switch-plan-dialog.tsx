@@ -45,6 +45,8 @@ export function SwitchPlanDialog({
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [preview, setPreview] = useState<Preview | null>(null);
+    // Set for a downgrade: it waits for the renewal and charges nothing now.
+    const [effectiveAt, setEffectiveAt] = useState<string | null>(null);
     const [quoteFailed, setQuoteFailed] = useState(false);
     const [switching, setSwitching] = useState(false);
 
@@ -53,6 +55,7 @@ export function SwitchPlanDialog({
         setLoading(true);
         setQuoteFailed(false);
         setPreview(null);
+        setEffectiveAt(null);
 
         try {
             const response = await fetch(
@@ -64,6 +67,7 @@ export function SwitchPlanDialog({
 
             const body = await response.json();
             setPreview(body.preview);
+            setEffectiveAt(body.effective_at ?? null);
         } catch {
             // Never a blocker: the switch itself is still theirs to make.
             setQuoteFailed(true);
@@ -133,7 +137,21 @@ export function SwitchPlanDialog({
                                     </>
                                 )}
 
-                                {!loading && !preview && (
+                                {!loading && effectiveAt && (
+                                    <span>
+                                        You keep your current plan until{' '}
+                                        <strong>
+                                            {new Date(
+                                                effectiveAt,
+                                            ).toLocaleDateString()}
+                                        </strong>
+                                        , the end of the period you have already
+                                        paid for. {planName} starts then, and
+                                        nothing is charged now.
+                                    </span>
+                                )}
+
+                                {!loading && !preview && !effectiveAt && (
                                     <span>
                                         {quoteFailed
                                             ? 'We could not get a price from our payment provider just now. The change will still be prorated — you will only pay the difference.'

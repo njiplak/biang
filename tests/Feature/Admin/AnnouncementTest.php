@@ -321,7 +321,7 @@ it('shares nothing for a guest', function () {
 
     app(CurrentWorkspace::class)->forget();
 
-    $this->get('/')
+    $this->get(route('login'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->has('announcements', 0));
 });

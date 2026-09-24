@@ -284,22 +284,20 @@ it('still creates the workspace when the plan was never published to the provide
     expect(Workspace::where('name', 'Acme Inc')->exists())->toBeTrue();
 });
 
-// The plan is spent on the workspace it was carried to, not every later one.
-it('does not send the next workspace to checkout as well', function () {
+// One workspace per customer: a second is refused, and the plan was spent on the first.
+it('refuses a second workspace and checks out only the first', function () {
     $gateway = fakeGateway();
 
     signUpWith(['plan' => 'pro']);
 
     $this->post(route('workspace.store'), ['name' => 'First Co']);
     $this->post(route('workspace.store'), ['name' => 'Second Co'])
-        ->assertRedirect();
+        ->assertSessionHasErrors('errors');
 
-    $second = Workspace::where('name', 'Second Co')->firstOrFail();
-
-    expect($gateway->checkouts)->toHaveCount(1)
+    expect(Workspace::where('name', 'Second Co')->exists())->toBeFalse()
+        ->and($gateway->checkouts)->toHaveCount(1)
         ->and($gateway->checkouts[0]['workspace'])
-        ->toBe(Workspace::where('name', 'First Co')->firstOrFail()->ulid)
-        ->and($second->subscription()->withoutWorkspaceScope()->first())->toBeNull();
+        ->toBe(Workspace::where('name', 'First Co')->firstOrFail()->ulid);
 });
 
 /*

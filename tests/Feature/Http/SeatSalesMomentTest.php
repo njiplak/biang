@@ -107,3 +107,30 @@ it('offers no seat add-on on the free tier', function () {
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('seat_offer', null));
 });
+
+/*
+ * The seat is charged at Dodo and cannot be rolled back, so an invitation the
+ * database would refuse (one live invite per address) must be refused before
+ * the seat is bought - not after, which used to leave the charge standing and
+ * our record of the seat rolled away.
+ */
+it('charges nothing when the address already has a live invitation', function () {
+    $gateway = fakeGateway();
+
+    PlanPrice::query()->update(['dodo_product_id' => 'prod_x']);
+    App\Models\Subscription::withoutWorkspaceScope()
+        ->where('workspace_id', $this->workspace->id)
+        ->update(['dodo_subscription_id' => 'sub_dodo_1']);
+
+    WorkspaceInvitation::factory()->for($this->workspace)->create(['email' => 'sixth@example.com']);
+
+    $this->actingAs($this->owner)
+        ->post(route('workspace.invitation.store', $this->workspace), [
+            'email' => 'Sixth@Example.com',
+            'role' => 'member',
+            'add_seat' => true,
+        ])->assertSessionHasErrors('errors');
+
+    expect($gateway->planChanges)->toBeEmpty()
+        ->and(SubscriptionItem::withoutWorkspaceScope()->count())->toBe(0);
+});

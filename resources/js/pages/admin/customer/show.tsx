@@ -488,6 +488,32 @@ export default function CustomerShow({
                                         subscription.current_period_end,
                                     )}
                                 />
+                                {subscription.cancel_at_period_end && (
+                                    <Field
+                                        label="Cancels on"
+                                        value={formatDate(subscription.ends_at)}
+                                    />
+                                )}
+                                {subscription.cancel_at_period_end &&
+                                    (subscription.cancellation_feedback ||
+                                        subscription.cancellation_comment) && (
+                                        <Field
+                                            className="sm:col-span-2"
+                                            label="Reason given"
+                                            value={[
+                                                subscription.cancellation_feedback,
+                                                subscription.cancellation_comment,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' — ')}
+                                        />
+                                    )}
+                                {subscription.scheduled_plan && (
+                                    <Field
+                                        label="Scheduled change"
+                                        value={`To ${subscription.scheduled_plan} on ${formatDate(subscription.scheduled_change_at)}`}
+                                    />
+                                )}
                                 {subscription.grant_reason && (
                                     <Field
                                         className="sm:col-span-2"

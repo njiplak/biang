@@ -113,6 +113,11 @@ interface PaymentGatewayContract
      * replaces the whole subscription line-up, so anything not listed is
      * dropped.
      *
+     * $atNextBillingDate schedules the move for the renewal instead: a
+     * downgrade, where the customer keeps what they already paid for.
+     * $replaceScheduled must be set when a change is already scheduled, or Dodo
+     * refuses the request.
+     *
      * @param  list<array{addon_id: string, quantity: int}>  $addons
      *
      * @throws \App\Exceptions\Domain\PlanChangeUnavailable
@@ -121,7 +126,17 @@ interface PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $atNextBillingDate = false,
+        bool $replaceScheduled = false,
     ): void;
+
+    /**
+     * Drop a plan change scheduled with $atNextBillingDate, keeping the
+     * current plan.
+     *
+     * @throws \App\Exceptions\Domain\PlanChangeUnavailable
+     */
+    public function cancelScheduledPlanChange(Subscription $subscription): void;
 
     /**
      * Report one metered event, so Dodo can bill for what was consumed.
@@ -166,6 +181,15 @@ interface PaymentGatewayContract
     ): void;
 
     /**
+     * Undo a cancellation scheduled with $atPeriodEnd, so the subscription
+     * renews as normal. Only meaningful before the period ends; once Dodo has
+     * cancelled it there is nothing left to resume and a new checkout is needed.
+     *
+     * @throws \App\Exceptions\Domain\ResumeFailed
+     */
+    public function resumeSubscription(Subscription $subscription): void;
+
+    /**
      * What a plan change would cost, before it is made.
      *
      * Section 4 prices a switch as "the price difference is prorated", and
@@ -185,6 +209,7 @@ interface PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $replaceScheduled = false,
     ): array;
 
     public function reportUsage(

@@ -43,6 +43,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'password' => 'hashed',
             'trial_consumed_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
             // Encrypted at rest: a leaked backup must not hand over the seeds
             // needed to generate working codes.
             'two_factor_secret' => 'encrypted',
@@ -82,6 +83,25 @@ class User extends Authenticatable implements MustVerifyEmail
     public function belongsToWorkspace(Workspace $workspace): bool
     {
         return $this->roleIn($workspace) !== null;
+    }
+
+    /**
+     * Workspaces this person owns, closed ones included until they are
+     * anonymised - a closed workspace can still be restored, and restoring must
+     * not take them past config('workspace.max_owned').
+     */
+    public function ownedWorkspaceCount(): int
+    {
+        return Workspace::withTrashed()
+            ->whereNull('anonymized_at')
+            ->whereIn('id', $this->memberships()->where('role', WorkspaceRole::Owner)->select('workspace_id'))
+            ->count();
+    }
+
+    /** One customer, one workspace for now (config workspace.max_owned). */
+    public function canCreateWorkspace(): bool
+    {
+        return $this->ownedWorkspaceCount() < (int) config('workspace.max_owned');
     }
 
     public function memberships(): HasMany

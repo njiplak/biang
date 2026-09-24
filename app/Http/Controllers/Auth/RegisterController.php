@@ -11,6 +11,7 @@ use App\Models\PlanPrice;
 use App\Models\User;
 use App\Models\WorkspaceInvitation;
 use App\Service\Billing\SubscriptionService;
+use App\Support\ProductEvents;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,9 @@ class RegisterController extends Controller
 
     /** Path C's token, carried across the signup the same way the plan is. */
     public const PENDING_INVITATION = 'pending_invitation_token';
+
+    /** The name to give the workspace created once they have verified. */
+    public const PENDING_WORKSPACE_NAME = 'pending_workspace_name';
 
     /** Section 11's "Start trial" button arrives here as ?plan=pro&interval=year. */
     public function create(Request $request): Response
@@ -166,7 +170,13 @@ class RegisterController extends Controller
         $invitation = $this->pendingInvitation(is_string($token) ? $token : null);
 
         $user = DB::transaction(function () use ($request, $invitation) {
-            $user = User::create($request->validated());
+            $user = User::create($request->safe()->only(['name', 'email', 'password']));
+
+            // Recorded rather than implied: which wording, and when.
+            $version = Page::legalVersion();
+            if ($version !== null) {
+                $user->forceFill(['terms_accepted_at' => now(), 'terms_version' => $version])->save();
+            }
 
             if ($invitation !== null && $invitation->email === $user->email) {
                 $user->markEmailAsVerified();
@@ -182,6 +192,13 @@ class RegisterController extends Controller
 
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
+
+        $request->session()->put(self::PENDING_WORKSPACE_NAME, $request->validated('workspace_name'));
+
+        ProductEvents::record('signed_up', $user, null, [
+            'plan' => $request->session()->get(self::PENDING_PLAN),
+            'invited' => $invitation !== null,
+        ]);
 
         if ($user->hasVerifiedEmail() && $invitation !== null) {
             return redirect()->route('invitation.show', $token);

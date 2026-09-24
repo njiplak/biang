@@ -32,6 +32,9 @@ class SendTrialWarnings extends Command
                 ->where('status', SubscriptionStatus::Trialing)
                 ->whereNotNull('trial_ends_at')
                 ->whereDate('trial_ends_at', today()->addDays($days))
+                // Already cancelled: nothing will be charged, so a warning that
+                // says it will be is the one email we must not send.
+                ->where('cancel_at_period_end', false)
                 ->with('workspace')
                 ->get();
 

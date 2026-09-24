@@ -17,4 +17,17 @@ return [
 
     'retention_days' => (int) env('WORKSPACE_RETENTION_DAYS', 30),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Workspaces a person may own
+    |--------------------------------------------------------------------------
+    |
+    | One customer, one workspace for now. Joining other people's workspaces by
+    | invitation is not limited. Closed workspaces still inside their retention
+    | window count, because restoring one would otherwise exceed the limit.
+    |
+    */
+
+    'max_owned' => (int) env('WORKSPACE_MAX_OWNED', 1),
+
 ];

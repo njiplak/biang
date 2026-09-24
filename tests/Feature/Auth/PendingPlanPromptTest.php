@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Workspace\OnboardingController;
 use App\Models\Plan;
 use App\Models\User;
 use App\Service\Billing\SubscriptionService;
@@ -18,6 +19,12 @@ use Inertia\Testing\AssertableInertia;
  * Section 15 calls trial-to-paid "the number this whole build exists to move".
  */
 
+/*
+ * Onboarding now creates the workspace (and opens the card form) on the way
+ * in, so this prompt only shows when that failed - hence the FAILED flag in
+ * every session below, which also stops the dashboard redirecting to it.
+ */
+
 beforeEach(function () {
     $this->withoutVite();
     $this->seed(FeatureSeeder::class);
@@ -28,6 +35,7 @@ beforeEach(function () {
 
 it('says nothing when no plan was carried through', function () {
     $this->actingAs($this->user)
+        ->withSession([OnboardingController::FAILED => true])
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('pending_plan', null));
@@ -37,7 +45,7 @@ it('names the plan and the trial that is still waiting', function () {
     $plan = Plan::query()->public()->where('is_free', false)->first();
 
     $this->actingAs($this->user)
-        ->withSession([RegisterController::PENDING_PLAN => $plan->code])
+        ->withSession([OnboardingController::FAILED => true, RegisterController::PENDING_PLAN => $plan->code])
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
@@ -54,7 +62,7 @@ it('does not consume the choice by rendering the page', function () {
     $plan = Plan::query()->public()->where('is_free', false)->first();
 
     $this->actingAs($this->user)
-        ->withSession([RegisterController::PENDING_PLAN => $plan->code])
+        ->withSession([OnboardingController::FAILED => true, RegisterController::PENDING_PLAN => $plan->code])
         ->get(route('dashboard'))
         ->assertOk();
 
@@ -71,7 +79,7 @@ it('stops promising a trial to someone who has already used theirs', function ()
     $this->user->update(['trial_consumed_at' => now()]);
 
     $this->actingAs($this->user)
-        ->withSession([RegisterController::PENDING_PLAN => $plan->code])
+        ->withSession([OnboardingController::FAILED => true, RegisterController::PENDING_PLAN => $plan->code])
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
@@ -86,7 +94,7 @@ it('stops promising a trial to someone who has already used theirs', function ()
  */
 it('ignores a plan that is no longer on sale', function (string $code) {
     $this->actingAs($this->user)
-        ->withSession([RegisterController::PENDING_PLAN => $code])
+        ->withSession([OnboardingController::FAILED => true, RegisterController::PENDING_PLAN => $code])
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('pending_plan', null));
@@ -98,7 +106,7 @@ it('ignores the free floor plan, which is never sold', function () {
     expect($free)->not->toBeNull();
 
     $this->actingAs($this->user)
-        ->withSession([RegisterController::PENDING_PLAN => $free->code])
+        ->withSession([OnboardingController::FAILED => true, RegisterController::PENDING_PLAN => $free->code])
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page->where('pending_plan', null));

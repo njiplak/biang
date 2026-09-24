@@ -2,11 +2,14 @@
 
 namespace App\Service\Billing;
 
+use App\Contract\Billing\BillingNotifierContract;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
+use App\Contract\Billing\UsageContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
+use App\Enums\BillingInterval;
 use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
 use App\Enums\CancellationFeedback;
@@ -14,6 +17,7 @@ use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\AddonNotAvailable;
 use App\Exceptions\Domain\DowngradeBlocked;
 use App\Exceptions\Domain\NoActiveSubscription;
+use App\Exceptions\Domain\PlanChangeScheduled;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Exceptions\Domain\TrialNotExtendable;
 use App\Exceptions\Domain\WorkspaceAlreadySubscribed;
@@ -25,8 +29,14 @@ use App\Models\Subscription;
 use App\Models\SubscriptionItem;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Notifications\Billing\AddonChangedNotification;
+use App\Notifications\Billing\PlanChangedNotification;
+use App\Notifications\Billing\SubscriptionCanceledNotification;
 use App\Support\Features;
+use Carbon\CarbonInterface;
+use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * OUR subscription state, not a mirror of Dodo's.
@@ -51,6 +61,8 @@ class SubscriptionService implements SubscriptionContract
         private readonly EntitlementContract $entitlements,
         private readonly MembershipContract $memberships,
         private readonly PaymentGatewayContract $gateway,
+        private readonly BillingNotifierContract $notifier,
+        private readonly UsageContract $usage,
     ) {}
 
     public function startTrial(Workspace $workspace, PlanPrice $price, User $startedBy): Subscription
@@ -180,9 +192,20 @@ class SubscriptionService implements SubscriptionContract
             throw new NoActiveSubscription($workspace);
         }
 
+        // Picking the plan they are already on, with a downgrade pending, is
+        // "never mind the downgrade".
+        if ((int) $price->id === (int) $subscription->plan_price_id) {
+            $this->keepCurrentPlan($workspace);
+
+            return $subscription->refresh();
+        }
+
         // Section 7: "The downgrade is blocked until they remove three people."
         // Before the money, so a refusal costs nothing to unwind.
         $this->assertPlanFits($workspace, $price);
+
+        $scheduleFor = $this->downgradeDate($subscription, $price);
+        $replacing = $subscription->scheduled_plan_price_id !== null;
 
         /*
          * Deliberately OUTSIDE the transaction below. A call to somebody else's
@@ -191,13 +214,41 @@ class SubscriptionService implements SubscriptionContract
          * table.
          */
         if ($subscription->isHeldWithProvider()) {
-            $this->gateway->changeSubscriptionPlan($subscription, $price, $this->providerAddons($subscription));
+            $this->gateway->changeSubscriptionPlan(
+                $subscription,
+                $price,
+                $this->providerAddons($subscription),
+                atNextBillingDate: $scheduleFor !== null,
+                replaceScheduled: $replacing,
+            );
         }
 
-        return DB::transaction(function () use ($workspace, $subscription, $price) {
+        $fromPlan = $subscription->plan->name;
+
+        /*
+         * A downgrade waits for the renewal: they keep the plan they paid for
+         * until then, and the reconciler moves them when Dodo applies it.
+         */
+        if ($scheduleFor !== null) {
+            $subscription->update([
+                'scheduled_plan_price_id' => $price->id,
+                'scheduled_change_at' => $scheduleFor,
+            ]);
+
+            $this->notify($workspace, 'plan_changed', $subscription, PlanChangedNotification::for(
+                $workspace, $fromPlan, $price, true, $scheduleFor,
+            ));
+
+            return $subscription->refresh();
+        }
+
+        $changed = DB::transaction(function () use ($workspace, $subscription, $price) {
             $subscription->update([
                 'plan_id' => $price->plan_id,
                 'plan_price_id' => $price->id,
+                // An immediate change replaces anything that was scheduled.
+                'scheduled_plan_price_id' => null,
+                'scheduled_change_at' => null,
             ]);
 
             /*
@@ -211,6 +262,62 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'plan_changed', $changed, PlanChangedNotification::for(
+            $workspace, $fromPlan, $price, $changed->isHeldWithProvider(),
+        ));
+
+        return $changed;
+    }
+
+    /**
+     * Drop a scheduled downgrade and stay on the current plan. Nothing is
+     * charged: the current plan is what they are already paying for.
+     */
+    public function keepCurrentPlan(Workspace $workspace): void
+    {
+        $subscription = $this->requireSubscription($workspace);
+
+        if ($subscription->scheduled_plan_price_id === null) {
+            return;
+        }
+
+        if ($subscription->isHeldWithProvider()) {
+            $this->gateway->cancelScheduledPlanChange($subscription);
+        }
+
+        $subscription->update([
+            'scheduled_plan_price_id' => null,
+            'scheduled_change_at' => null,
+        ]);
+    }
+
+    /**
+     * When a move to $price would take effect if it waited for the renewal, or
+     * null when it applies now.
+     *
+     * Only a downgrade waits - a lower tier, or the same tier from annual to
+     * monthly - and only on a paid period Dodo is renewing. An upgrade applies
+     * at once (they are paying for more), and a trial or a plan granted by
+     * hand has no paid time to protect.
+     */
+    public function downgradeDate(Subscription $subscription, PlanPrice $price): ?CarbonInterface
+    {
+        if (! $subscription->isHeldWithProvider()
+            || $subscription->status !== SubscriptionStatus::Active
+            || ! $subscription->current_period_end?->isFuture()) {
+            return null;
+        }
+
+        $from = $subscription->plan;
+        $to = $price->plan;
+
+        $isDowngrade = $from->sort_order !== $to->sort_order
+            ? $to->sort_order < $from->sort_order
+            : $subscription->planPrice->billing_interval === BillingInterval::Year
+                && $price->billing_interval === BillingInterval::Month;
+
+        return $isDowngrade ? $subscription->current_period_end : null;
     }
 
     /**
@@ -298,6 +405,117 @@ class SubscriptionService implements SubscriptionContract
     }
 
     /**
+     * The customer's own cancel button. Scheduled for the end of the period
+     * they have already paid for, so an annual customer who leaves in month two
+     * keeps the ten months they paid for instead of losing them with no refund.
+     *
+     * Falls back to cancelling now when there is no paid period to honour: a
+     * plan granted by hand (nothing is charged), or a subscription already past
+     * due (the period was never paid for).
+     */
+    public function cancelAtPeriodEnd(
+        Workspace $workspace,
+        ?CancellationFeedback $feedback = null,
+        ?string $comment = null,
+    ): void {
+        $subscription = $this->liveSubscription($workspace);
+        $endsAt = $subscription === null ? null : $this->paidThrough($subscription);
+
+        if ($subscription === null || $endsAt === null) {
+            $this->cancel($workspace, $feedback, $comment);
+
+            if ($subscription !== null) {
+                $this->notify($workspace, 'subscription_canceled', $subscription, new SubscriptionCanceledNotification(
+                    $workspace, $subscription->plan->name, null,
+                ));
+            }
+
+            return;
+        }
+
+        // Pressing cancel twice is not a second cancellation, and not a second email.
+        if ($subscription->cancel_at_period_end) {
+            return;
+        }
+
+        // Dodo first, for the reason cancel() gives: if they refuse, nothing here moves.
+        $this->gateway->cancelSubscription($subscription, true, $feedback, $comment);
+
+        /*
+         * canceled_at stays null until the subscription actually ends: the
+         * churn figures count it, and a customer who is still paying (and may
+         * yet resume) has not churned. Their answer is kept now, though -
+         * asking again at the period end would mean asking someone who left.
+         */
+        $subscription->update([
+            'cancel_at_period_end' => true,
+            'cancellation_feedback' => $feedback,
+            'cancellation_comment' => $comment,
+        ]);
+
+        $this->notify($workspace, 'subscription_canceled', $subscription, new SubscriptionCanceledNotification(
+            $workspace, $subscription->plan->name, $endsAt,
+        ));
+    }
+
+    /**
+     * Undo cancelAtPeriodEnd before the period runs out. After it has run out
+     * the subscription is gone at Dodo too, and coming back is a new checkout.
+     */
+    public function resume(Workspace $workspace): void
+    {
+        $subscription = $this->requireSubscription($workspace);
+
+        // Nothing scheduled: it is already renewing, which is what was asked for.
+        if (! $subscription->cancel_at_period_end) {
+            return;
+        }
+
+        $this->gateway->resumeSubscription($subscription);
+
+        $subscription->update([
+            'cancel_at_period_end' => false,
+            'cancellation_feedback' => null,
+            'cancellation_comment' => null,
+        ]);
+    }
+
+    /**
+     * The date a scheduled cancellation takes effect, or null when there is no
+     * paid period left to run out. A trial runs to its end: cancelling on day
+     * three still leaves the rest of the fourteen days, uncharged.
+     */
+    public function paidThrough(Subscription $subscription): ?CarbonInterface
+    {
+        if (! $subscription->isHeldWithProvider()) {
+            return null;
+        }
+
+        $end = match ($subscription->status) {
+            SubscriptionStatus::Trialing => $subscription->trial_ends_at ?? $subscription->current_period_end,
+            SubscriptionStatus::Active => $subscription->current_period_end,
+            default => null,
+        };
+
+        return $end?->isFuture() ? $end : null;
+    }
+
+    /**
+     * A confirmation for something the customer just did. Keyed uniquely per
+     * action because each one is its own event; sendOnce is used for its
+     * recipient rules and its log, not to collapse repeats.
+     */
+    private function notify(Workspace $workspace, string $type, Subscription $subscription, Notification $notification): void
+    {
+        $this->notifier->sendOnce(
+            $workspace,
+            $type,
+            "{$type}:sub_{$subscription->id}:".Str::ulid(),
+            fn () => $notification,
+        );
+    }
+
+    /**
      * Section 4: three kinds of add-on, charged differently, but all resolving
      * through the SAME entitlement path as the plan's own allowance.
      *
@@ -315,6 +533,7 @@ class SubscriptionService implements SubscriptionContract
         $subscription = $this->requireSubscription($workspace);
         $addon = $price->addon;
 
+        $this->assertNoScheduledChange($subscription);
         $this->assertPurchasable($subscription, $addon, $price);
 
         $existing = SubscriptionItem::withoutWorkspaceScope()
@@ -332,7 +551,7 @@ class SubscriptionService implements SubscriptionContract
         // locked table.
         $this->chargeAddons($subscription, $price, $resolved);
 
-        return DB::transaction(function () use ($workspace, $subscription, $addon, $price, $resolved) {
+        $updated = DB::transaction(function () use ($workspace, $subscription, $addon, $price, $resolved) {
             $item = SubscriptionItem::withoutWorkspaceScope()
                 ->where('subscription_id', $subscription->id)
                 ->where('addon_id', $addon->id)
@@ -355,6 +574,12 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'addon_changed', $updated, new AddonChangedNotification(
+            $workspace, $addon->name, $resolved, $updated->isHeldWithProvider(),
+        ));
+
+        return $updated;
     }
 
     public function changeAddonQuantity(Workspace $workspace, Addon $addon, int $quantity): Subscription
@@ -371,6 +596,8 @@ class SubscriptionService implements SubscriptionContract
             throw new AddonNotAvailable($addon, 'not currently on this subscription');
         }
 
+        $this->assertNoScheduledChange($subscription);
+
         // Reducing capacity is a downgrade, and the same rule applies: we do
         // not take away what is in use, and we say how much has to go first.
         $this->assertReductionFits($workspace, $addon, $item->quantity, $quantity);
@@ -382,7 +609,7 @@ class SubscriptionService implements SubscriptionContract
             $this->chargeAddons($subscription, $item->addonPrice, max(0, $quantity));
         }
 
-        return DB::transaction(function () use ($workspace, $subscription, $item, $quantity) {
+        $updated = DB::transaction(function () use ($workspace, $subscription, $item, $quantity) {
             $quantity <= 0
                 ? $item->delete()
                 : $item->update(['quantity' => $quantity]);
@@ -391,6 +618,12 @@ class SubscriptionService implements SubscriptionContract
 
             return $subscription->refresh();
         });
+
+        $this->notify($workspace, 'addon_changed', $updated, new AddonChangedNotification(
+            $workspace, $addon->name, max(0, $quantity), $updated->isHeldWithProvider(),
+        ));
+
+        return $updated;
     }
 
     /**
@@ -426,6 +659,19 @@ class SubscriptionService implements SubscriptionContract
             ->all();
 
         $this->gateway->changeSubscriptionPlan($subscription, $subscription->planPrice, $addons);
+    }
+
+    private function assertNoScheduledChange(Subscription $subscription): void
+    {
+        // A plan granted by hand never reaches Dodo, so there is nothing to refuse it.
+        if ($subscription->scheduled_plan_price_id === null || ! $subscription->isHeldWithProvider()) {
+            return;
+        }
+
+        throw new PlanChangeScheduled(
+            (string) $subscription->scheduledPlanPrice?->plan?->name,
+            $subscription->scheduled_change_at,
+        );
     }
 
     private function assertPurchasable(Subscription $subscription, Addon $addon, AddonPrice $price): void
@@ -504,13 +750,28 @@ class SubscriptionService implements SubscriptionContract
 
     public function assertPlanFits(Workspace $workspace, PlanPrice $price): void
     {
-        if ($this->seatOverageFor($workspace, $price) === 0) {
-            return;
+        $plan = $price->plan()->with('features')->first();
+
+        if ($this->seatOverageFor($workspace, $price) > 0) {
+            throw new DowngradeBlocked(Features::SEATS, $workspace->seatsUsed(), (int) $plan?->limitFor(Features::SEATS));
         }
 
-        $limit = (int) $price->plan()->with('features')->first()?->limitFor(Features::SEATS);
+        // Every other counted limit gets the same rule: a plan that cannot
+        // hold what is already in use is refused before anyone is charged,
+        // rather than accepted and turned into an over-limit hard block.
+        foreach (Features::MEASURED as $featureKey) {
+            $limit = $featureKey === Features::SEATS ? null : $plan?->limitFor($featureKey);
 
-        throw new DowngradeBlocked(Features::SEATS, $workspace->seatsUsed(), $limit);
+            if ($limit === null) {
+                continue;
+            }
+
+            $used = $this->usage->current($workspace, $featureKey);
+
+            if ($used > $limit) {
+                throw new DowngradeBlocked($featureKey, $used, $limit);
+            }
+        }
     }
 
     private function assertNotSubscribed(Workspace $workspace): void

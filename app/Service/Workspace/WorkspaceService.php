@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\User as UserModel;
 use App\Models\Workspace;
 use App\Models\WorkspaceMember;
+use App\Support\ProductEvents;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -36,7 +37,7 @@ class WorkspaceService implements WorkspaceContract
      */
     public function create(User $owner, string $name): Workspace
     {
-        return DB::transaction(function () use ($owner, $name) {
+        $workspace = DB::transaction(function () use ($owner, $name) {
             $workspace = Workspace::create([
                 'name' => $name,
                 'slug' => $this->uniqueSlug($name),
@@ -61,6 +62,10 @@ class WorkspaceService implements WorkspaceContract
 
             return $workspace->refresh();
         });
+
+        ProductEvents::record('workspace_created', $owner, $workspace);
+
+        return $workspace;
     }
 
     /**
@@ -142,8 +147,13 @@ class WorkspaceService implements WorkspaceContract
         return DB::transaction(function () use ($workspace) {
             $workspace->restore();
 
+            // Closing overwrites access_status but leaves suspended_at alone,
+            // so a suspension survives the round trip instead of being lifted
+            // by closing and reopening.
             $workspace->update([
-                'access_status' => AccessStatus::Active,
+                'access_status' => $workspace->suspended_at !== null
+                    ? AccessStatus::Suspended
+                    : AccessStatus::Active,
                 'purge_after' => null,
             ]);
 

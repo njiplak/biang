@@ -15,6 +15,9 @@ final class Features
 {
     public const SEATS = 'seats';
 
+    /** The example product feature: see App\Service\Project\ProjectService. */
+    public const PROJECTS = 'projects';
+
     /**
      * Feature keys the application actually MEASURES - that is, keys something
      * calls setGauge/increment/record for.
@@ -29,6 +32,7 @@ final class Features
      */
     public const MEASURED = [
         self::SEATS,
+        self::PROJECTS,
     ];
 
     public static function isMeasured(string $key): bool

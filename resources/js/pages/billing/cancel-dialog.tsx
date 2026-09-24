@@ -43,7 +43,11 @@ const REASONS = [
     { value: 'other', label: 'Something else' },
 ];
 
-export function CancelDialog() {
+/**
+ * paidThrough is the date the server will end access if this is confirmed, or
+ * null when it would end immediately (a plan granted by hand, or one past due).
+ */
+export function CancelDialog({ paidThrough }: { paidThrough: string | null }) {
     const [open, setOpen] = useState(false);
     const form = useForm<{ feedback: string | null; comment: string }>({
         feedback: null,
@@ -75,20 +79,51 @@ export function CancelDialog() {
                             lose access" becoming a dispute. */}
                         <DialogDescription asChild>
                             <div className="flex flex-col gap-2 text-left">
-                                <span>
-                                    Billing stops straight away and you will not
-                                    be charged again.
-                                </span>
-                                <span>
-                                    The workspace becomes{' '}
-                                    <strong>read-only</strong>. Everything in it
-                                    stays, stays readable, and is never deleted
-                                    — nobody is removed and nothing is trimmed.
-                                </span>
-                                <span>
-                                    You can choose a plan again at any time and
-                                    pick up exactly where you left off.
-                                </span>
+                                {paidThrough ? (
+                                    <>
+                                        <span>
+                                            You will not be charged again.
+                                            Everything keeps working until{' '}
+                                            <strong>
+                                                {new Date(
+                                                    paidThrough,
+                                                ).toLocaleDateString()}
+                                            </strong>
+                                            , the end of the time you have
+                                            already paid for.
+                                        </span>
+                                        <span>
+                                            After that the workspace becomes{' '}
+                                            <strong>read-only</strong>.
+                                            Everything in it stays, stays
+                                            readable, and is never deleted.
+                                        </span>
+                                        <span>
+                                            Changed your mind before then? Resume
+                                            from this page and nothing changes.
+                                        </span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>
+                                            The subscription ends straight away
+                                            and you will not be charged again.
+                                        </span>
+                                        <span>
+                                            The workspace becomes{' '}
+                                            <strong>read-only</strong>.
+                                            Everything in it stays, stays
+                                            readable, and is never deleted —
+                                            nobody is removed and nothing is
+                                            trimmed.
+                                        </span>
+                                        <span>
+                                            You can choose a plan again at any
+                                            time and pick up exactly where you
+                                            left off.
+                                        </span>
+                                    </>
+                                )}
                             </div>
                         </DialogDescription>
                     </DialogHeader>

@@ -3,6 +3,7 @@
 namespace App\Notifications\Billing;
 
 use App\Models\Workspace;
+use App\Notifications\Billing\Concerns\MentionsSupport;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,7 +23,7 @@ use Illuminate\Notifications\Notification;
  */
 class PaymentFailedReminderNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use MentionsSupport, Queueable;
 
     public function __construct(
         private readonly Workspace $workspace,
@@ -64,7 +65,7 @@ class PaymentFailedReminderNotification extends Notification implements ShouldQu
 
         // Section 6: "Cancelling does not delete anything." Worth repeating
         // here - the fear this email creates is about losing data, not access.
-        return $message->line('Nothing is deleted at any point, and you can export your data at any time.');
+        return $this->withSupportLine($message->line('Nothing is deleted at any point, and you can export your data at any time.'));
     }
 
     private function countdown(int $daysLeft): string

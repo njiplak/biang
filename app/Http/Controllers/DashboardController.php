@@ -2,9 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Contract\Billing\UsageContract;
+use App\Enums\WorkspaceRole;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Workspace\OnboardingController;
 use App\Models\Plan;
+use App\Models\Workspace;
 use App\Service\Billing\SubscriptionService;
+use App\Support\CurrentWorkspace;
+use App\Support\Features;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,8 +25,22 @@ use Inertia\Response;
  */
 class DashboardController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
+        $closed = $this->closedWorkspaces($request);
+
+        /*
+         * One customer, one workspace, made for them on the way in. Not when
+         * they have a closed one to restore - that is offered below instead -
+         * and not straight after onboarding failed, or the two would bounce
+         * the request between them.
+         */
+        if ($request->user()->workspaces()->doesntExist()
+            && $closed === []
+            && ! $request->session()->get(OnboardingController::FAILED)) {
+            return redirect()->route('onboarding');
+        }
+
         // The workspace list is already shared as `tenancy` on every page for
         // the switcher; shipping a second copy here was duplicate state, and
         // naming it `workspaces` silently overrode the shared one.
@@ -30,7 +51,61 @@ class DashboardController extends Controller
         // that no longer exists.
         return Inertia::render('dashboard', [
             'pending_plan' => $this->pendingPlan($request),
+            'closed_workspaces' => $closed,
+            'home' => $this->home(),
         ]);
+    }
+
+    /**
+     * The current workspace at a glance: its plan, and how far along setting
+     * it up the customer is. Null when they are not in one.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function home(): ?array
+    {
+        $workspace = app(CurrentWorkspace::class)->get();
+
+        if ($workspace === null) {
+            return null;
+        }
+
+        return [
+            'plan' => $workspace->subscription()->with('plan')->first()?->plan?->name,
+            'members' => $workspace->members()->count(),
+            'projects' => app(UsageContract::class)->current($workspace, Features::PROJECTS),
+        ];
+    }
+
+    /**
+     * Section 6 promises a closed workspace is recoverable until its purge
+     * date, and this is where that promise can be kept: the switcher no longer
+     * lists it, so without this nobody could find it to bring it back.
+     *
+     * Owners only, matching WorkspacePolicy::restore - listing it to someone
+     * who cannot restore it would be a button that only ever says no.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function closedWorkspaces(Request $request): array
+    {
+        $owned = $request->user()->memberships()
+            ->where('role', WorkspaceRole::Owner)
+            ->pluck('workspace_id');
+
+        return Workspace::onlyTrashed()
+            ->whereIn('id', $owned)
+            ->whereNull('anonymized_at')
+            ->where('purge_after', '>', now())
+            ->orderBy('purge_after')
+            ->get(['id', 'ulid', 'name', 'purge_after'])
+            ->map(fn (Workspace $workspace) => [
+                'ulid' => $workspace->ulid,
+                'name' => $workspace->name,
+                'restorable_until' => $workspace->purge_after,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

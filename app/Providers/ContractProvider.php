@@ -29,6 +29,7 @@ use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Billing\SubscriptionPullerContract;
 use App\Contract\Billing\UsageContract;
 use App\Contract\Billing\WebhookVerifierContract;
+use App\Contract\Project\ProjectContract;
 use App\Contract\Public\PricingContract;
 use App\Contract\Setting\PermissionContract;
 use App\Contract\Setting\RoleContract;
@@ -64,6 +65,7 @@ use App\Service\Billing\StandardWebhookVerifier;
 use App\Service\Billing\SubscriptionPuller;
 use App\Service\Billing\SubscriptionService;
 use App\Service\Billing\UsageService;
+use App\Service\Project\ProjectService;
 use App\Service\Public\PricingService;
 use App\Service\Setting\PermissionService;
 use App\Service\Setting\RoleService;
@@ -118,6 +120,9 @@ class ContractProvider extends ServiceProvider
         MembershipContract::class => MembershipService::class,
         WorkspaceMemberContract::class => WorkspaceMemberService::class,
         InvitationContract::class => InvitationService::class,
+
+        // The example product feature
+        ProjectContract::class => ProjectService::class,
 
         // Public, read by the marketing site (section 11)
         PricingContract::class => PricingService::class,

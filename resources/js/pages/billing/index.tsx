@@ -70,6 +70,15 @@ type Props = {
         cancel_at_period_end: boolean;
         // when cancelling would take effect; null means immediately
         paid_through: string | null;
+        // a downgrade waiting for the renewal
+        scheduled_change: {
+            plan: string;
+            price_id: number;
+            amount_minor: number;
+            currency: string;
+            interval: string;
+            effective_at: string;
+        } | null;
         amount_minor: number;
         currency: string;
         interval: string;
@@ -257,6 +266,35 @@ function CurrentPlan({
                     <p className="text-muted-foreground">
                         <RenewalLine subscription={subscription} />
                     </p>
+                    {subscription.scheduled_change && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
+                            <span>
+                                Switching to{' '}
+                                <strong>
+                                    {subscription.scheduled_change.plan}
+                                </strong>{' '}
+                                (
+                                {money(
+                                    subscription.scheduled_change.amount_minor,
+                                    subscription.scheduled_change.currency,
+                                )}
+                                /{subscription.scheduled_change.interval}) on{' '}
+                                {date(subscription.scheduled_change.effective_at)}
+                                . Nothing is charged until then.
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    router.delete('/billing/plan/scheduled', {
+                                        preserveScroll: true,
+                                    })
+                                }
+                            >
+                                Keep current plan
+                            </Button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <p className="border-t border-border py-3 text-sm text-muted-foreground">
@@ -431,6 +469,9 @@ function Plans({
                 // Section 7: a plan that cannot hold the people already here is
                 // not an offer. Said before it is clicked, not after the charge.
                 const blocked = plan.seat_overage > 0;
+                const scheduled = plan.prices.some(
+                    (p) => p.id === subscription?.scheduled_change?.price_id,
+                );
 
                 return (
                     <div
@@ -447,6 +488,11 @@ function Plans({
                                 {plan.is_current && (
                                     <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                                         Current plan
+                                    </span>
+                                )}
+                                {scheduled && (
+                                    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                                        Starts at renewal
                                     </span>
                                 )}
                                 {plan.code === preselected &&
@@ -473,6 +519,7 @@ function Plans({
                             </span>
 
                             {!plan.is_current &&
+                                !scheduled &&
                                 (subscription ? (
                                     /* Prorated by Dodo, so the number has to
                                        come from them before it is charged. */

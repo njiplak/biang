@@ -47,6 +47,10 @@ Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () 
      */
     Route::get('plan/preview', [BillingController::class, 'previewPlan'])
         ->middleware('verified')->name('plan.preview');
+
+    // Drop a downgrade scheduled for the renewal. Charges nothing, so not
+    // behind `verified` - backing out of a change is never blocked.
+    Route::delete('plan/scheduled', [BillingController::class, 'keepCurrentPlan'])->name('plan.keep');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
 
     // Verified like every other action that keeps charging a card.

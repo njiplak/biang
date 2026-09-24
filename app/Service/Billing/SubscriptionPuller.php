@@ -140,6 +140,9 @@ class SubscriptionPuller implements SubscriptionPullerContract
             $data['cancel_at_next_billing_date'] ?? null,
             $data['cancelled_at'] ?? null,
             $data['trial_period_days'] ?? null,
+            // A scheduled plan change landing, or being dropped at their end.
+            $data['product_id'] ?? null,
+            $data['scheduled_change'] ?? null,
         ]));
 
         return "pull:sub:{$providerSubscriptionId}:".substr($state, 0, 16);

@@ -356,9 +356,29 @@ class BillingController extends Controller
         // quotes a price for a move that will be blocked.
         $this->subscriptions->assertPlanFits($workspace, $price);
 
+        // A downgrade waits for the renewal, so there is no charge to quote -
+        // only the date it takes effect.
+        $effectiveAt = $this->subscriptions->downgradeDate($subscription, $price);
+
+        if ($effectiveAt !== null) {
+            return response()->json(['preview' => null, 'effective_at' => $effectiveAt]);
+        }
+
         return response()->json([
-            'preview' => $this->gateway->previewPlanChange($subscription, $price),
+            'preview' => $this->gateway->previewPlanChange(
+                $subscription,
+                $price,
+                replaceScheduled: $subscription->scheduled_plan_price_id !== null,
+            ),
         ]);
+    }
+
+    /** Drop a downgrade scheduled for the renewal and stay on the current plan. */
+    public function keepCurrentPlan(): RedirectResponse
+    {
+        $this->subscriptions->keepCurrentPlan($this->workspace());
+
+        return back();
     }
 
     /** Every action on this page is a billing action, so the check is uniform. */
@@ -377,11 +397,13 @@ class BillingController extends Controller
 
     private function subscriptionPayload(Workspace $workspace): ?array
     {
-        $subscription = $workspace->subscription()->with('plan', 'planPrice')->first();
+        $subscription = $workspace->subscription()->with('plan', 'planPrice', 'scheduledPlanPrice.plan')->first();
 
         if ($subscription === null) {
             return null;
         }
+
+        $scheduled = $subscription->scheduledPlanPrice;
 
         return [
             'plan' => $subscription->plan->name,
@@ -394,6 +416,15 @@ class BillingController extends Controller
             'cancel_at_period_end' => $subscription->cancel_at_period_end,
             // When pressing cancel today would end access; null means at once.
             'paid_through' => $this->subscriptions->paidThrough($subscription),
+            // A downgrade waiting for the renewal.
+            'scheduled_change' => $scheduled === null ? null : [
+                'plan' => $scheduled->plan->name,
+                'price_id' => $scheduled->id,
+                'amount_minor' => $scheduled->amount_minor,
+                'currency' => $scheduled->currency,
+                'interval' => $scheduled->billing_interval->value,
+                'effective_at' => $subscription->scheduled_change_at,
+            ],
             'amount_minor' => $subscription->planPrice->amount_minor,
             'currency' => $subscription->planPrice->currency,
             'interval' => $subscription->planPrice->billing_interval->value,

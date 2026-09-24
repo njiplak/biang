@@ -2,6 +2,7 @@
 
 namespace App\Service\Billing;
 
+use App\Contract\Billing\BillingNotifierContract;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\ReconcilerContract;
 use App\Contract\Workspace\MembershipContract;
@@ -16,6 +17,8 @@ use App\Models\Subscription;
 use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Models\Workspace;
+use App\Notifications\Billing\SubscriptionCanceledNotification;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -35,6 +38,7 @@ class DodoReconciler implements ReconcilerContract
     public function __construct(
         private readonly EntitlementContract $entitlements,
         private readonly MembershipContract $memberships,
+        private readonly BillingNotifierContract $notifier,
     ) {}
 
     public function reconcile(WebhookEvent $event): void
@@ -90,14 +94,24 @@ class DodoReconciler implements ReconcilerContract
 
     private function apply(WebhookEvent $event, Subscription $subscription, array $data): void
     {
-        $workspace = $subscription->workspace;
+        /*
+         * withTrashed: closing a workspace cancels its subscription at Dodo and
+         * soft-deletes it, so the cancellation event that follows belongs to a
+         * trashed workspace. Through the plain relation that was null, and
+         * every such event failed on it until its retries ran out.
+         */
+        $workspace = $subscription->workspace()->withTrashed()->first();
 
         $this->adoptCustomerId($workspace, $data);
 
         match ($event->event_type) {
-            'subscription.active', 'subscription.renewed' => $this->activate($subscription, $workspace, $data),
+            'subscription.active', 'subscription.renewed' => $this->activate($subscription, $workspace, $data, $event->event_id),
             'subscription.on_hold', 'subscription.past_due', 'subscription.failed' => $this->pastDue($subscription, $workspace, $data),
-            'subscription.cancelled' => $this->cancel($subscription, $workspace, $data),
+            'subscription.cancelled' => $this->cancel($subscription, $workspace, $data, $event->event_id),
+            // Changes made on their side - a cancellation scheduled from their
+            // portal, a scheduled plan change applied - arrive as one of these
+            // and carry the whole subscription, so its status says what to do.
+            'subscription.updated', 'subscription.plan_changed' => $this->byStatus($subscription, $workspace, $data, $event->event_id),
             'subscription.expired' => $this->expire($subscription, $workspace),
             'payment.succeeded' => $this->paymentSucceeded($subscription, $workspace, $data),
             'payment.failed' => $this->pastDue($subscription, $workspace, $data),
@@ -109,12 +123,26 @@ class DodoReconciler implements ReconcilerContract
         $subscription->update(['provider_event_at' => $event->occurred_at]);
     }
 
+    /** The same mapping SubscriptionPuller uses for a subscription it asked about. */
+    private function byStatus(Subscription $subscription, Workspace $workspace, array $data, string $eventKey): void
+    {
+        match ($data['status'] ?? null) {
+            'active' => $this->activate($subscription, $workspace, $data, $eventKey),
+            'on_hold', 'past_due', 'failed' => $this->pastDue($subscription, $workspace, $data),
+            'cancelled' => $this->cancel($subscription, $workspace, $data, $eventKey),
+            'expired' => $this->expire($subscription, $workspace),
+            default => null,
+        };
+    }
+
     /**
      * Section 4: the trial auto-charges on day 15, and this is the notification
      * that says it worked. Also covers every later renewal.
      */
-    private function activate(Subscription $subscription, Workspace $workspace, array $data): void
+    private function activate(Subscription $subscription, Workspace $workspace, array $data, string $eventKey): void
     {
+        $wasScheduledToEnd = $subscription->cancel_at_period_end;
+
         /*
          * Dodo has no `trialing` status - a subscription in its free days is
          * `active` with trial_period_days set and nothing charged yet. So we
@@ -147,6 +175,17 @@ class DodoReconciler implements ReconcilerContract
 
         if ($trialing) {
             $this->consumeTrial($subscription, $data);
+        }
+
+        $this->applyScheduledPlanChange($subscription, $data);
+
+        /*
+         * Scheduled to end, and not by us: our own cancel sets the flag before
+         * Dodo echoes it back, so a flip seen here was made on their portal and
+         * nobody has confirmed it to the customer yet.
+         */
+        if (! $wasScheduledToEnd && $subscription->cancel_at_period_end) {
+            $this->confirmCancellation($subscription, $workspace, $this->date($data, 'next_billing_date'), $eventKey);
         }
 
         // Section 9: recovering clears the grace window in the same breath, or
@@ -238,8 +277,17 @@ class DodoReconciler implements ReconcilerContract
      * 16's known risk is exactly this arriving from Dodo's own page rather than
      * ours, so it has to land in the same state either route.
      */
-    private function cancel(Subscription $subscription, Workspace $workspace, array $data): void
+    private function cancel(Subscription $subscription, Workspace $workspace, array $data, string $eventKey): void
     {
+        /*
+         * Ended outright from their side, with no warning sent. Excluded: one we
+         * cancelled ourselves (already not live), a scheduled end the customer
+         * was told about when it was scheduled, and a past-due subscription
+         * ending, which the grace-period emails already cover.
+         */
+        $unannounced = in_array($subscription->status, [SubscriptionStatus::Active, SubscriptionStatus::Trialing], true)
+            && ! $subscription->cancel_at_period_end;
+
         $subscription->update([
             'status' => SubscriptionStatus::Canceled,
             'canceled_at' => $this->date($data, 'cancelled_at') ?? now(),
@@ -251,6 +299,63 @@ class DodoReconciler implements ReconcilerContract
         $workspace->update(['grace_ends_at' => null]);
 
         $this->settle($workspace, BillingStatus::Unpaid);
+
+        if ($unannounced) {
+            $this->confirmCancellation($subscription, $workspace, null, $eventKey);
+        }
+    }
+
+    /**
+     * A downgrade we scheduled lands at the renewal. Dodo's record then names
+     * the new product, and that - not the date - is what moves our plan, so a
+     * renewal that did not apply it leaves the customer where they are.
+     */
+    private function applyScheduledPlanChange(Subscription $subscription, array $data): void
+    {
+        if ($subscription->scheduled_plan_price_id === null) {
+            return;
+        }
+
+        $productId = $data['product_id'] ?? null;
+        $scheduled = PlanPrice::find($subscription->scheduled_plan_price_id);
+
+        if ($scheduled !== null && $productId !== null && $productId === $scheduled->dodo_product_id) {
+            $subscription->update([
+                'plan_id' => $scheduled->plan_id,
+                'plan_price_id' => $scheduled->id,
+                'scheduled_plan_price_id' => null,
+                'scheduled_change_at' => null,
+            ]);
+
+            return;
+        }
+
+        // Still on the old product and nothing scheduled any more: it was
+        // dropped on their side, so stop showing it here.
+        if (array_key_exists('scheduled_change', $data) && $data['scheduled_change'] === null && $productId !== null) {
+            $subscription->update([
+                'scheduled_plan_price_id' => null,
+                'scheduled_change_at' => null,
+            ]);
+        }
+    }
+
+    /** Keyed on the event, so a redelivery or a retry never sends it twice. */
+    private function confirmCancellation(Subscription $subscription, Workspace $workspace, ?Carbon $endsAt, string $eventKey): void
+    {
+        // A closed workspace's owners already know; they closed it.
+        if ($workspace->trashed()) {
+            return;
+        }
+
+        $plan = $subscription->plan->name;
+
+        $this->notifier->sendOnce(
+            $workspace,
+            'subscription_canceled',
+            "subscription_canceled:sub_{$subscription->id}:{$eventKey}",
+            fn () => new SubscriptionCanceledNotification($workspace, $plan, $endsAt),
+        );
     }
 
     private function expire(Subscription $subscription, Workspace $workspace): void

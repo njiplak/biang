@@ -46,6 +46,12 @@ interface SubscriptionContract
      * say exactly how many have to go, and the billing page needs the same
      * figure to mark a plan as unbuyable before anyone clicks it.
      */
+    /** Drop a downgrade scheduled for the renewal and stay on the current plan. */
+    public function keepCurrentPlan(Workspace $workspace): void;
+
+    /** When a move to $price would wait for the renewal (a downgrade), or null when it applies now. */
+    public function downgradeDate(Subscription $subscription, PlanPrice $price): ?CarbonInterface;
+
     public function seatOverageFor(Workspace $workspace, PlanPrice $price): int;
 
     /**

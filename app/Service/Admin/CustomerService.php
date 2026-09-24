@@ -4,6 +4,7 @@ namespace App\Service\Admin;
 
 use App\Contract\Admin\CustomerContract;
 use App\Contract\Billing\UsageContract;
+use App\Enums\SubscriptionStatus;
 use App\Enums\WorkspaceRole;
 use App\Models\Feature;
 use App\Models\InvoiceSummary;
@@ -78,7 +79,7 @@ class CustomerService implements CustomerContract
 
     public function overview(Workspace $workspace): array
     {
-        $subscription = $this->liveSubscription($workspace, ['plan', 'planPrice', 'grantedByAdmin']);
+        $subscription = $this->liveSubscription($workspace, ['plan', 'planPrice', 'grantedByAdmin', 'scheduledPlanPrice.plan']);
         $entitlements = $this->entitlements($workspace);
 
         return [
@@ -156,6 +157,18 @@ class CustomerService implements CustomerContract
             'interval' => $subscription->planPrice->billing_interval->value,
             'granted_by' => $subscription->grantedByAdmin?->name,
             'grant_reason' => $subscription->grant_reason,
+            // Support is asked "why did my plan stop?" and "why am I still on
+            // Pro?" - both are answered by what is scheduled, not what is live.
+            'cancel_at_period_end' => $subscription->cancel_at_period_end,
+            'ends_at' => $subscription->cancel_at_period_end
+                ? ($subscription->status === SubscriptionStatus::Trialing
+                    ? $subscription->trial_ends_at
+                    : $subscription->current_period_end)
+                : null,
+            'cancellation_feedback' => $subscription->cancellation_feedback?->value,
+            'cancellation_comment' => $subscription->cancellation_comment,
+            'scheduled_plan' => $subscription->scheduledPlanPrice?->plan?->name,
+            'scheduled_change_at' => $subscription->scheduled_change_at,
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
+use App\Enums\BillingInterval;
 use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
 use App\Enums\CancellationFeedback;
@@ -15,6 +16,7 @@ use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\AddonNotAvailable;
 use App\Exceptions\Domain\DowngradeBlocked;
 use App\Exceptions\Domain\NoActiveSubscription;
+use App\Exceptions\Domain\PlanChangeScheduled;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Exceptions\Domain\TrialNotExtendable;
 use App\Exceptions\Domain\WorkspaceAlreadySubscribed;
@@ -188,9 +190,20 @@ class SubscriptionService implements SubscriptionContract
             throw new NoActiveSubscription($workspace);
         }
 
+        // Picking the plan they are already on, with a downgrade pending, is
+        // "never mind the downgrade".
+        if ((int) $price->id === (int) $subscription->plan_price_id) {
+            $this->keepCurrentPlan($workspace);
+
+            return $subscription->refresh();
+        }
+
         // Section 7: "The downgrade is blocked until they remove three people."
         // Before the money, so a refusal costs nothing to unwind.
         $this->assertPlanFits($workspace, $price);
+
+        $scheduleFor = $this->downgradeDate($subscription, $price);
+        $replacing = $subscription->scheduled_plan_price_id !== null;
 
         /*
          * Deliberately OUTSIDE the transaction below. A call to somebody else's
@@ -199,15 +212,41 @@ class SubscriptionService implements SubscriptionContract
          * table.
          */
         if ($subscription->isHeldWithProvider()) {
-            $this->gateway->changeSubscriptionPlan($subscription, $price, $this->providerAddons($subscription));
+            $this->gateway->changeSubscriptionPlan(
+                $subscription,
+                $price,
+                $this->providerAddons($subscription),
+                atNextBillingDate: $scheduleFor !== null,
+                replaceScheduled: $replacing,
+            );
         }
 
         $fromPlan = $subscription->plan->name;
+
+        /*
+         * A downgrade waits for the renewal: they keep the plan they paid for
+         * until then, and the reconciler moves them when Dodo applies it.
+         */
+        if ($scheduleFor !== null) {
+            $subscription->update([
+                'scheduled_plan_price_id' => $price->id,
+                'scheduled_change_at' => $scheduleFor,
+            ]);
+
+            $this->notify($workspace, 'plan_changed', $subscription, PlanChangedNotification::for(
+                $workspace, $fromPlan, $price, true, $scheduleFor,
+            ));
+
+            return $subscription->refresh();
+        }
 
         $changed = DB::transaction(function () use ($workspace, $subscription, $price) {
             $subscription->update([
                 'plan_id' => $price->plan_id,
                 'plan_price_id' => $price->id,
+                // An immediate change replaces anything that was scheduled.
+                'scheduled_plan_price_id' => null,
+                'scheduled_change_at' => null,
             ]);
 
             /*
@@ -227,6 +266,56 @@ class SubscriptionService implements SubscriptionContract
         ));
 
         return $changed;
+    }
+
+    /**
+     * Drop a scheduled downgrade and stay on the current plan. Nothing is
+     * charged: the current plan is what they are already paying for.
+     */
+    public function keepCurrentPlan(Workspace $workspace): void
+    {
+        $subscription = $this->requireSubscription($workspace);
+
+        if ($subscription->scheduled_plan_price_id === null) {
+            return;
+        }
+
+        if ($subscription->isHeldWithProvider()) {
+            $this->gateway->cancelScheduledPlanChange($subscription);
+        }
+
+        $subscription->update([
+            'scheduled_plan_price_id' => null,
+            'scheduled_change_at' => null,
+        ]);
+    }
+
+    /**
+     * When a move to $price would take effect if it waited for the renewal, or
+     * null when it applies now.
+     *
+     * Only a downgrade waits - a lower tier, or the same tier from annual to
+     * monthly - and only on a paid period Dodo is renewing. An upgrade applies
+     * at once (they are paying for more), and a trial or a plan granted by
+     * hand has no paid time to protect.
+     */
+    public function downgradeDate(Subscription $subscription, PlanPrice $price): ?CarbonInterface
+    {
+        if (! $subscription->isHeldWithProvider()
+            || $subscription->status !== SubscriptionStatus::Active
+            || ! $subscription->current_period_end?->isFuture()) {
+            return null;
+        }
+
+        $from = $subscription->plan;
+        $to = $price->plan;
+
+        $isDowngrade = $from->sort_order !== $to->sort_order
+            ? $to->sort_order < $from->sort_order
+            : $subscription->planPrice->billing_interval === BillingInterval::Year
+                && $price->billing_interval === BillingInterval::Month;
+
+        return $isDowngrade ? $subscription->current_period_end : null;
     }
 
     /**
@@ -442,6 +531,7 @@ class SubscriptionService implements SubscriptionContract
         $subscription = $this->requireSubscription($workspace);
         $addon = $price->addon;
 
+        $this->assertNoScheduledChange($subscription);
         $this->assertPurchasable($subscription, $addon, $price);
 
         $existing = SubscriptionItem::withoutWorkspaceScope()
@@ -504,6 +594,8 @@ class SubscriptionService implements SubscriptionContract
             throw new AddonNotAvailable($addon, 'not currently on this subscription');
         }
 
+        $this->assertNoScheduledChange($subscription);
+
         // Reducing capacity is a downgrade, and the same rule applies: we do
         // not take away what is in use, and we say how much has to go first.
         $this->assertReductionFits($workspace, $addon, $item->quantity, $quantity);
@@ -565,6 +657,19 @@ class SubscriptionService implements SubscriptionContract
             ->all();
 
         $this->gateway->changeSubscriptionPlan($subscription, $subscription->planPrice, $addons);
+    }
+
+    private function assertNoScheduledChange(Subscription $subscription): void
+    {
+        // A plan granted by hand never reaches Dodo, so there is nothing to refuse it.
+        if ($subscription->scheduled_plan_price_id === null || ! $subscription->isHeldWithProvider()) {
+            return;
+        }
+
+        throw new PlanChangeScheduled(
+            (string) $subscription->scheduledPlanPrice?->plan?->name,
+            $subscription->scheduled_change_at,
+        );
     }
 
     private function assertPurchasable(Subscription $subscription, Addon $addon, AddonPrice $price): void

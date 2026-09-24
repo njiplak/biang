@@ -6,6 +6,7 @@ use App\Contract\Billing\BillingNotifierContract;
 use App\Contract\Billing\EntitlementContract;
 use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Billing\SubscriptionContract;
+use App\Contract\Billing\UsageContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
 use App\Enums\BillingInterval;
@@ -61,6 +62,7 @@ class SubscriptionService implements SubscriptionContract
         private readonly MembershipContract $memberships,
         private readonly PaymentGatewayContract $gateway,
         private readonly BillingNotifierContract $notifier,
+        private readonly UsageContract $usage,
     ) {}
 
     public function startTrial(Workspace $workspace, PlanPrice $price, User $startedBy): Subscription
@@ -748,13 +750,28 @@ class SubscriptionService implements SubscriptionContract
 
     public function assertPlanFits(Workspace $workspace, PlanPrice $price): void
     {
-        if ($this->seatOverageFor($workspace, $price) === 0) {
-            return;
+        $plan = $price->plan()->with('features')->first();
+
+        if ($this->seatOverageFor($workspace, $price) > 0) {
+            throw new DowngradeBlocked(Features::SEATS, $workspace->seatsUsed(), (int) $plan?->limitFor(Features::SEATS));
         }
 
-        $limit = (int) $price->plan()->with('features')->first()?->limitFor(Features::SEATS);
+        // Every other counted limit gets the same rule: a plan that cannot
+        // hold what is already in use is refused before anyone is charged,
+        // rather than accepted and turned into an over-limit hard block.
+        foreach (Features::MEASURED as $featureKey) {
+            $limit = $featureKey === Features::SEATS ? null : $plan?->limitFor($featureKey);
 
-        throw new DowngradeBlocked(Features::SEATS, $workspace->seatsUsed(), $limit);
+            if ($limit === null) {
+                continue;
+            }
+
+            $used = $this->usage->current($workspace, $featureKey);
+
+            if ($used > $limit) {
+                throw new DowngradeBlocked($featureKey, $used, $limit);
+            }
+        }
     }
 
     private function assertNotSubscribed(Workspace $workspace): void

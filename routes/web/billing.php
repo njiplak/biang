@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () {
     Route::get('/', [BillingController::class, 'index'])->name('index');
 
+    // Where the customer lands once the card form has settled.
+    Route::get('welcome', [BillingController::class, 'welcome'])->name('welcome');
+
     /*
      * `verified` from here down. Section 5 Path B is explicit that verification
      * comes before the card, and section 12 sells one trial per PERSON, ever -

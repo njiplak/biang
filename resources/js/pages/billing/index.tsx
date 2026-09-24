@@ -16,9 +16,18 @@ type Price = {
 };
 // Every plan on this page carries a price: the floor plan is not public and
 // never reaches it.
+type PlanFeature = {
+    key: string;
+    name: string;
+    type: 'limit' | 'boolean' | 'metered';
+    // null means unlimited
+    limit: number | null;
+};
+
 type Plan = {
     code: string;
     name: string;
+    features: PlanFeature[];
     is_current: boolean;
     // How many people have to go before this plan is buyable. 0 means it fits.
     seat_overage: number;
@@ -432,6 +441,13 @@ function Plans({
 
     if (plans.length === 0) return null;
 
+    // "Annual is cheaper per month" (section 4) is the reason to offer it, so
+    // say by how much instead of leaving the arithmetic to the customer.
+    const bestSaving = Math.max(
+        0,
+        ...plans.map((plan) => annualSaving(plan) ?? 0),
+    );
+
     return (
         <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -452,7 +468,11 @@ function Plans({
                                         : 'text-muted-foreground'
                                 }`}
                             >
-                                {option === 'year' ? 'Annual' : 'Monthly'}
+                                {option === 'year'
+                                    ? bestSaving > 0
+                                        ? `Annual (save up to ${bestSaving}%)`
+                                        : 'Annual'
+                                    : 'Monthly'}
                             </button>
                         ))}
                     </div>
@@ -502,6 +522,13 @@ function Plans({
                                         </span>
                                     )}
                             </span>
+                            {plan.features.length > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                    {plan.features
+                                        .map(describeFeature)
+                                        .join(' · ')}
+                                </span>
+                            )}
                             {blocked && (
                                 <span className="text-xs text-destructive">
                                     Remove {plan.seat_overage} member
@@ -516,6 +543,9 @@ function Plans({
                             <span className="text-muted-foreground">
                                 {money(price.amount_minor, price.currency)}/
                                 {price.interval}
+                                {price.interval === 'year' &&
+                                    (annualSaving(plan) ?? 0) > 0 &&
+                                    ` · save ${annualSaving(plan)}%`}
                             </span>
 
                             {!plan.is_current &&
@@ -569,6 +599,30 @@ function Plans({
             })}
         </section>
     );
+}
+
+/** Whole-percent saving of the annual price over twelve monthly ones, same currency. */
+function annualSaving(plan: Plan): number | null {
+    const month = plan.prices.find((p) => p.interval === 'month');
+    const year = plan.prices.find(
+        (p) => p.interval === 'year' && p.currency === month?.currency,
+    );
+
+    if (!month || !year || month.amount_minor <= 0) return null;
+
+    return Math.round(
+        (1 - year.amount_minor / (month.amount_minor * 12)) * 100,
+    );
+}
+
+function describeFeature(feature: PlanFeature): string {
+    const name = feature.name.toLowerCase();
+
+    if (feature.type === 'boolean') return feature.name;
+    if (feature.limit === null) return `Unlimited ${name}`;
+    if (feature.type === 'metered') return `${feature.limit} ${name} included`;
+
+    return `${feature.limit} ${name}`;
 }
 
 /**

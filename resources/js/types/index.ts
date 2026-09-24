@@ -33,11 +33,16 @@ export type CurrentWorkspace = {
     // Whether the viewer can open /billing. Everyone else is pointed at the owner.
     can_manage_billing: boolean;
     owner_name: string | null;
+    // What the plan grants: an integer limit, or null for unlimited. A feature
+    // missing from the map is not included in the plan. See useEntitlement.
+    entitlements: Record<string, number | null>;
 };
 
 export type WorkspaceContext = {
     current: CurrentWorkspace | null;
     available: WorkspaceSummary[];
+    // One workspace per customer for now.
+    can_create_workspace: boolean;
 };
 
 /** Section 10: set on every page while staff are inside a customer account. */

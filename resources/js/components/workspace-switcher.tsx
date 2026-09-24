@@ -67,17 +67,23 @@ export default function WorkspaceSwitcher() {
                             )}
                         </DropdownMenuItem>
                     ))}
-                    <DropdownMenuSeparator />
-                    {/* Opens here rather than linking to the dashboard: this
-                        control is on every page, and creating a workspace is
-                        an action, not somewhere you go. */}
-                    <DropdownMenuItem
-                        onSelect={() => setCreating(true)}
-                        className="cursor-pointer"
-                    >
-                        <Plus className="mr-2 size-4" />
-                        New workspace
-                    </DropdownMenuItem>
+                    {/* One workspace per customer for now, so this only
+                        appears for someone who does not own one yet. Opens
+                        here rather than linking to the dashboard: this control
+                        is on every page, and creating a workspace is an
+                        action, not somewhere you go. */}
+                    {tenancy.can_create_workspace && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onSelect={() => setCreating(true)}
+                                className="cursor-pointer"
+                            >
+                                <Plus className="mr-2 size-4" />
+                                New workspace
+                            </DropdownMenuItem>
+                        </>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
 

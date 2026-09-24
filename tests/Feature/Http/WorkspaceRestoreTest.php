@@ -36,11 +36,12 @@ it('lists a closed workspace on the owner dashboard', function () {
             ->where('closed_workspaces.0.ulid', $this->workspace->ulid));
 });
 
-// A button that could only ever answer 403 is worse than no button.
-it('does not list it to someone who cannot restore it', function () {
+// A button that could only ever answer 403 is worse than no button. With
+// nothing to restore and no workspace left, the member is onboarded instead.
+it('does not offer it to someone who cannot restore it', function () {
     $this->actingAs($this->member)
         ->get(route('dashboard'))
-        ->assertInertia(fn ($page) => $page->has('closed_workspaces', 0));
+        ->assertRedirect(route('onboarding'));
 });
 
 it('lets the owner restore it and switches them into it', function () {

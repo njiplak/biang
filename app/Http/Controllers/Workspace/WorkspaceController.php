@@ -3,19 +3,14 @@
 namespace App\Http\Controllers\Workspace;
 
 use App\Contract\Admin\AuditContract;
-use App\Contract\Billing\PaymentGatewayContract;
 use App\Contract\Workspace\WorkspaceContract;
-use App\Enums\BillingInterval;
-use App\Exceptions\Domain\DomainException;
-use App\Exceptions\Domain\TrialAlreadyConsumed;
-use App\Http\Controllers\Auth\RegisterController;
+use App\Exceptions\Domain\WorkspaceLimitReached;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Workspace\TransferOwnershipRequest;
 use App\Http\Requests\Workspace\WorkspaceRequest;
-use App\Models\Plan;
 use App\Models\Workspace;
 use App\Models\WorkspaceMember;
-use App\Service\Billing\SubscriptionService;
+use App\Support\PendingPlanCheckout;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -31,94 +26,22 @@ class WorkspaceController extends Controller
 {
     public function __construct(
         private readonly WorkspaceContract $service,
-        private readonly PaymentGatewayContract $gateway,
         // Section 10's permanent record, for the customer actions support is
         // most often asked about. See MemberController for the reasoning.
         private readonly AuditContract $audit,
     ) {}
 
-    public function store(WorkspaceRequest $request): SymfonyResponse
+    public function store(WorkspaceRequest $request, PendingPlanCheckout $checkout): SymfonyResponse
     {
+        // One workspace per customer for now; joining other people's is unaffected.
+        if (! $request->user()->canCreateWorkspace()) {
+            throw new WorkspaceLimitReached($request->user());
+        }
+
         $workspace = $this->service->create($request->user(), $request->validated('name'));
 
-        return $this->startPendingCheckout($request, $workspace)
-            ?? redirect()->route('workspace.member.index', $workspace);
-    }
-
-    /**
-     * Section 5 Path B: "name your workspace -> enter card -> 14-day trial
-     * begins". This is the arrow into the card form, and the workspace has to
-     * exist first because a trial belongs to one and the checkout carries its
-     * ulid in metadata.
-     *
-     * It hands the customer to Dodo rather than opening a trial here. Section 4
-     * is explicit that "a card is required to start", and a trial started
-     * locally has no card behind it - so it could never auto-charge on day 15,
-     * and it spent the person's one-per-person trial to give the product away
-     * for fourteen days.
-     *
-     * Failure must never take the workspace with it. They signed up and named
-     * it; the worst case is that they land on a read-only workspace and
-     * subscribe from the billing page themselves.
-     *
-     * @return SymfonyResponse|null null when there is nothing to buy, in which
-     *                              case the caller lands them in the app
-     */
-    private function startPendingCheckout(WorkspaceRequest $request, Workspace $workspace): ?SymfonyResponse
-    {
-        /*
-         * Pulled unconditionally, and both keys together. A choice left in the
-         * session would be spent on whatever workspace this person created
-         * next, which is not the one the link was clicked for.
-         */
-        $code = $request->session()->pull(RegisterController::PENDING_PLAN);
-        $interval = BillingInterval::tryFrom(
-            (string) $request->session()->pull(RegisterController::PENDING_INTERVAL)
-        ) ?? BillingInterval::Month;
-
-        if ($code === null) {
-            return null;
-        }
-
-        $price = Plan::query()->public()->where('code', $code)->first()
-            ?->activePriceFor($interval, config('billing.default_currency'));
-
-        if ($price === null) {
-            return null;
-        }
-
-        $buyer = $request->user();
-
-        /*
-         * Section 12: one trial per person, ever. Checked here rather than left
-         * to the webhook so a returning customer is told before a card form,
-         * not after entering one.
-         */
-        if ($buyer->hasConsumedTrial()) {
-            $request->session()->flash('warning', (new TrialAlreadyConsumed($buyer))->userMessage());
-
-            return null;
-        }
-
-        try {
-            $url = $this->gateway->createCheckout(
-                $workspace,
-                $price,
-                $buyer,
-                route('billing.index'),
-                route('billing.index'),
-                SubscriptionService::TRIAL_DAYS,
-            );
-        } catch (DomainException $e) {
-            // Section 14 phase 3 keeps the product sellable by hand, so a
-            // provider that is not wired up yet is a normal state, not a crash.
-            $request->session()->flash('warning', $e->userMessage());
-
-            return null;
-        }
-
-        // Inertia cannot follow a redirect to another origin on its own.
-        return Inertia::location($url);
+        return $checkout->start($request, $workspace, $request->user())
+            ?? redirect()->route('dashboard');
     }
 
     /**

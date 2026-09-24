@@ -3,6 +3,7 @@
 use App\Http\Controllers\Workspace\InvitationAcceptController;
 use App\Http\Controllers\Workspace\InvitationController;
 use App\Http\Controllers\Workspace\MemberController;
+use App\Http\Controllers\Workspace\OnboardingController;
 use App\Http\Controllers\Workspace\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -18,6 +19,9 @@ use Illuminate\Support\Facades\Route;
  * verified, and such an account owns no workspace to be locked out of.
  */
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Creates the customer's one workspace on the way in. See OnboardingController.
+    Route::get('onboarding', OnboardingController::class)->name('onboarding');
+
     Route::prefix('workspaces')->as('workspace.')->group(function () {
         Route::post('/', [WorkspaceController::class, 'store'])->name('store');
         Route::get('{workspace}/settings', [WorkspaceController::class, 'settings'])->name('settings');

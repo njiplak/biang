@@ -18,6 +18,7 @@ use App\Http\Requests\Billing\CancelSubscriptionRequest;
 use App\Http\Requests\Billing\PlanPriceRequest;
 use App\Models\Addon;
 use App\Models\AddonPrice;
+use App\Models\Feature;
 use App\Models\InvoiceSummary;
 use App\Models\Plan;
 use App\Models\PlanPrice;
@@ -25,6 +26,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceEntitlement;
 use App\Service\Billing\SubscriptionService;
 use App\Support\CurrentWorkspace;
+use App\Support\ProductEvents;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -131,10 +133,12 @@ class BillingController extends Controller
      */
     private function settleReturn(Workspace $workspace, string $providerSubscriptionId): RedirectResponse
     {
+        $settled = false;
+
         RateLimiter::attempt(
             "billing-pull:{$workspace->id}",
             self::PULL_ATTEMPTS,
-            function () use ($workspace, $providerSubscriptionId) {
+            function () use ($workspace, $providerSubscriptionId, &$settled) {
                 try {
                     $outcome = $this->puller->pull($providerSubscriptionId, $workspace);
                 } catch (ProviderLookupFailed $e) {
@@ -147,6 +151,8 @@ class BillingController extends Controller
                 }
 
                 if ($outcome === PullOutcome::Applied || $outcome === PullOutcome::InSync) {
+                    $settled = true;
+
                     return;
                 }
 
@@ -163,9 +169,43 @@ class BillingController extends Controller
 
         // A plan carried from the marketing site is the only other parameter
         // this page reads, and it must survive being sent round again.
+        // The moment the customer is most motivated: welcome them in rather
+        // than leaving them on an invoice screen.
+        if ($settled && $workspace->subscription()->exists()) {
+            return redirect()->route('billing.welcome');
+        }
+
         $plan = request()->input('plan');
 
         return redirect()->route('billing.index', is_string($plan) && $plan !== '' ? ['plan' => $plan] : []);
+    }
+
+    /**
+     * After the card form: what they now have, the date that matters, and
+     * the first things worth doing. Without a live subscription there is
+     * nothing to welcome them to, so it falls back to the billing page.
+     */
+    public function welcome(): Response|RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $subscription = $workspace->subscription()->with('plan', 'planPrice')->first();
+
+        if ($subscription === null) {
+            return redirect()->route('billing.index');
+        }
+
+        return Inertia::render('billing/welcome', [
+            'workspace' => ['ulid' => $workspace->ulid, 'name' => $workspace->name],
+            'subscription' => [
+                'plan' => $subscription->plan->name,
+                'status' => $subscription->status->value,
+                'trial_ends_at' => $subscription->trial_ends_at,
+                'current_period_end' => $subscription->current_period_end,
+                'amount_minor' => $subscription->planPrice->amount_minor,
+                'currency' => $subscription->planPrice->currency,
+                'interval' => $subscription->planPrice->billing_interval->value,
+            ],
+        ]);
     }
 
     /**
@@ -203,6 +243,8 @@ class BillingController extends Controller
             route('billing.index'),
             SubscriptionService::TRIAL_DAYS,
         );
+
+        ProductEvents::record('checkout_started', $buyer, $workspace, ['plan' => $price->plan->code, 'trial' => true]);
 
         return Inertia::location($url);
     }
@@ -278,6 +320,8 @@ class BillingController extends Controller
             route('billing.index'),
             route('billing.index'),
         );
+
+        ProductEvents::record('checkout_started', $request->user(), $workspace, ['plan' => $price->plan->code, 'trial' => false]);
 
         // Inertia cannot follow a redirect to another origin on its own.
         return Inertia::location($url);
@@ -541,6 +585,15 @@ class BillingController extends Controller
                 return [
                     'code' => $plan->code,
                     'name' => $plan->name,
+                    // What the plan includes, so an upgrade is chosen on what
+                    // it gives rather than on its name and price alone.
+                    'features' => $plan->features->sortBy('sort_order')->map(fn (Feature $feature) => [
+                        'key' => $feature->key,
+                        'name' => $feature->name,
+                        'type' => $feature->type->value,
+                        // null means unlimited
+                        'limit' => $feature->pivot->value === null ? null : (int) $feature->pivot->value,
+                    ])->values()->all(),
                     'is_current' => $currentPlanId !== null && $plan->id === $currentPlanId,
                     // How many people have to go before this plan is buyable.
                     // Zero means it fits.

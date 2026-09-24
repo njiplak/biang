@@ -6,6 +6,7 @@ use App\Contract\Billing\ReconcilerContract;
 use App\Models\WebhookEvent;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -37,6 +38,19 @@ class ReconcileWebhookEvent implements ShouldQueue
     public int $tries = 4;
 
     public function __construct(private readonly int $webhookEventId) {}
+
+    /**
+     * Every retry spent: the payment moved at Dodo and our records did not.
+     * Critical, so a log channel that alerts (LOG_STACK=single,slack) wakes
+     * someone - a customer who paid and is still locked out is the failure.
+     */
+    public function failed(Throwable $e): void
+    {
+        Log::critical('Dodo webhook event could not be applied after every retry.', [
+            'webhook_event_id' => $this->webhookEventId,
+            'error' => $e->getMessage(),
+        ]);
+    }
 
     public function handle(ReconcilerContract $reconciler): void
     {

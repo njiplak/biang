@@ -3,6 +3,7 @@ import { LoaderCircle } from 'lucide-react';
 import InputError from '@/components/input-error';
 import { PasswordInput } from '@/components/password-input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AuthLayout from '@/layouts/auth-layout';
@@ -12,6 +13,8 @@ type FormData = {
     email: string;
     password: string;
     password_confirmation: string;
+    workspace_name: string;
+    terms: boolean;
 };
 
 type ChosenPlan = {
@@ -55,7 +58,10 @@ export default function Register({
             email: invitedEmail ?? '',
             password: '',
             password_confirmation: '',
+            workspace_name: '',
+            terms: false,
         });
+    const hasLegal = Boolean(legal?.terms || legal?.privacy);
 
     const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -72,7 +78,7 @@ export default function Register({
                     ? 'Create your account to accept the invitation'
                     : plan
                       ? `Start your ${plan.trial_days}-day ${plan.name} trial`
-                      : 'No card required to start'
+                      : 'Choose a plan once you are in'
             }
         >
             <Head title="Sign up" />
@@ -153,38 +159,79 @@ export default function Register({
                     <InputError message={errors.password_confirmation} />
                 </div>
 
+                {/* An invitee joins someone else's workspace and gets none of
+                    their own, so there is nothing to name. */}
+                {!invitedTo && (
+                    <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="workspace_name">
+                            Company or workspace name{' '}
+                            <span className="text-muted-foreground">
+                                (optional)
+                            </span>
+                        </Label>
+                        <Input
+                            id="workspace_name"
+                            autoComplete="organization"
+                            value={data.workspace_name}
+                            onChange={(e) =>
+                                setData('workspace_name', e.target.value)
+                            }
+                        />
+                        <InputError message={errors.workspace_name} />
+                    </div>
+                )}
+
+                {/* Section 11, and a recorded tick rather than a sentence under
+                    the button: which wording they agreed to is kept on the
+                    account. Shown only for pages that are actually published -
+                    see Page::legalLinks(). */}
+                {hasLegal && (
+                    <div className="flex flex-col gap-1.5">
+                        <div className="flex items-start gap-2 text-sm">
+                            <Checkbox
+                                id="terms"
+                                checked={data.terms}
+                                onCheckedChange={(checked) =>
+                                    setData('terms', checked === true)
+                                }
+                            />
+                            <Label htmlFor="terms" className="font-normal">
+                                <span>
+                                    I agree to the{' '}
+                                    {legal?.terms && (
+                                        <a
+                                            href={legal.terms}
+                                            className="underline underline-offset-4"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Terms of Service
+                                        </a>
+                                    )}
+                                    {legal?.terms && legal?.privacy && ' and '}
+                                    {legal?.privacy && (
+                                        <a
+                                            href={legal.privacy}
+                                            className="underline underline-offset-4"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Privacy Policy
+                                        </a>
+                                    )}
+                                </span>
+                            </Label>
+                        </div>
+                        <InputError message={errors.terms} />
+                    </div>
+                )}
+
                 <Button type="submit" disabled={processing}>
                     {processing && (
                         <LoaderCircle className="mr-2 size-4 animate-spin" />
                     )}
                     Create account
                 </Button>
-
-                {/* Section 11. Shown only for pages that are actually
-                    published - see Page::legalLinks(). */}
-                {(legal?.terms || legal?.privacy) && (
-                    <p className="text-center text-xs text-muted-foreground">
-                        By creating an account you agree to our{' '}
-                        {legal.terms && (
-                            <a
-                                href={legal.terms}
-                                className="underline underline-offset-4"
-                            >
-                                Terms of Service
-                            </a>
-                        )}
-                        {legal.terms && legal.privacy && ' and '}
-                        {legal.privacy && (
-                            <a
-                                href={legal.privacy}
-                                className="underline underline-offset-4"
-                            >
-                                Privacy Policy
-                            </a>
-                        )}
-                        .
-                    </p>
-                )}
 
                 <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{' '}

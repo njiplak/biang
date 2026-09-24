@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Models\Workspace;
 use App\Notifications\Billing\SubscriptionCanceledNotification;
+use App\Support\ProductEvents;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -142,6 +143,7 @@ class DodoReconciler implements ReconcilerContract
     private function activate(Subscription $subscription, Workspace $workspace, array $data, string $eventKey): void
     {
         $wasScheduledToEnd = $subscription->cancel_at_period_end;
+        $previousStatus = $subscription->status;
 
         /*
          * Dodo has no `trialing` status - a subscription in its free days is
@@ -178,6 +180,17 @@ class DodoReconciler implements ReconcilerContract
         }
 
         $this->applyScheduledPlanChange($subscription, $data);
+
+        // Section 15's funnel: counted when the state first moves, not on
+        // every renewal or re-delivered event.
+        $now = $trialing ? SubscriptionStatus::Trialing : SubscriptionStatus::Active;
+        // wasRecentlyCreated: a first sighting is opened as trialing by
+        // open(), so its status alone would not show it moving.
+        if ($previousStatus !== $now || $subscription->wasRecentlyCreated) {
+            ProductEvents::record($trialing ? 'trial_started' : 'subscription_activated', null, $workspace, [
+                'plan' => $subscription->plan?->code,
+            ]);
+        }
 
         /*
          * Scheduled to end, and not by us: our own cancel sets the flag before

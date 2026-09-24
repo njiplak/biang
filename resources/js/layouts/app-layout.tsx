@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     CreditCard,
+    FolderKanban,
     LayoutDashboard,
     LifeBuoy,
     LogOut,
@@ -69,6 +70,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
             label: 'Dashboard',
             icon: LayoutDashboard,
             show: true,
+        },
+        // The example product feature; replace with the real product's screens.
+        {
+            href: '/projects',
+            label: 'Projects',
+            icon: FolderKanban,
+            show: Boolean(current),
         },
         {
             href: current

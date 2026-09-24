@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Workspace;
 
 use App\Contract\Workspace\InvitationContract;
+use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Controller;
 use App\Models\WorkspaceInvitation;
 use Illuminate\Http\RedirectResponse;
@@ -48,6 +49,9 @@ class InvitationAcceptController extends Controller
         // Drop them straight into the workspace they just joined.
         $user->update(['current_workspace_id' => $membership->workspace_id]);
         request()->session()->put('current_workspace_id', $membership->workspace_id);
+
+        // Spent: onboarding would otherwise keep sending them back to it.
+        request()->session()->forget(RegisterController::PENDING_INVITATION);
 
         return redirect()->route('workspace.member.index', $membership->workspace);
     }

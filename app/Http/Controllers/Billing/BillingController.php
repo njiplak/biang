@@ -13,6 +13,7 @@ use App\Exceptions\Domain\ProviderLookupFailed;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Exceptions\Domain\TrialCheckoutInFlight;
 use App\Exceptions\Domain\TrialNotOffered;
+use App\Exceptions\Domain\WorkspaceAlreadySubscribed;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\AddonPurchaseRequest;
 use App\Http\Requests\Billing\AddonQuantityRequest;
@@ -238,6 +239,10 @@ class BillingController extends Controller
             throw new TrialCheckoutInFlight($buyer);
         }
 
+        // A workspace on a lifetime plan is already a customer, and a trial
+        // checkout landing would end the plan it paid for.
+        $this->refuseWhileLifetime($workspace);
+
         $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
 
         /*
@@ -273,16 +278,27 @@ class BillingController extends Controller
         return Inertia::location($url);
     }
 
-    public function changePlan(PlanPriceRequest $request): RedirectResponse
+    public function changePlan(PlanPriceRequest $request): SymfonyResponse
     {
         $workspace = $this->workspace();
+        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        /*
+         * Onto, off, or up a lifetime plan is a new payment, made at Dodo's
+         * checkout. The plan moves when its webhook lands, as a first purchase
+         * does - nothing here changes it.
+         */
+        $url = $this->subscriptions->checkoutForPlanChange($workspace, $price, $request->user(), route('billing.index'));
+
+        if ($url !== null) {
+            ProductEvents::record('checkout_started', $request->user(), $workspace, ['plan' => $price->plan->code, 'trial' => false]);
+
+            return Inertia::location($url);
+        }
 
         // DowngradeBlocked is thrown from the service and rendered centrally,
         // carrying the exact number of people to remove.
-        $this->subscriptions->changePlan(
-            $workspace,
-            PlanPrice::findOrFail($request->validated('plan_price_id')),
-        );
+        $this->subscriptions->changePlan($workspace, $price);
 
         return back();
     }
@@ -326,6 +342,17 @@ class BillingController extends Controller
     {
         $workspace = $this->workspace();
         $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        /*
+         * Moving onto or off lifetime goes through changePlan, which says what
+         * the move gives up before sending anyone to pay. Bought from here, a
+         * second lifetime purchase would be charged with nothing to apply it to.
+         */
+        $this->refuseWhileLifetime($workspace);
+
+        if ($price->isLifetime() && $workspace->subscription()->exists()) {
+            throw new WorkspaceAlreadySubscribed($workspace);
+        }
 
         /*
          * Section 7's seat check, before anybody is charged.
@@ -411,14 +438,37 @@ class BillingController extends Controller
     {
         $workspace = $this->workspace();
         $subscription = $workspace->subscription()->first();
+        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
+
+        /*
+         * A move involving a lifetime plan is priced by us, not prorated by
+         * Dodo, and each kind gives something different up - so the dialog is
+         * told which one this is rather than handed a bare number.
+         */
+        if ($subscription !== null && ($subscription->isLifetime() || $price->isLifetime())) {
+            $this->subscriptions->assertPlanFits($workspace, $price);
+
+            return response()->json([
+                'preview' => null,
+                'change' => [
+                    'kind' => match (true) {
+                        ! $subscription->isLifetime() => 'buy_lifetime',
+                        ! $price->isLifetime() => 'leave_lifetime',
+                        $this->subscriptions->changeNeedsCheckout($subscription, $price) => 'lifetime_upgrade',
+                        default => 'lifetime_downgrade',
+                    },
+                    'amount_minor' => $this->subscriptions->planChangeCost($subscription, $price),
+                    'currency' => $price->currency,
+                    'interval' => $price->billing_interval->value,
+                ],
+            ]);
+        }
 
         if ($subscription === null || ! $subscription->isHeldWithProvider()) {
             // Nothing to prorate against: a first purchase is priced by the
             // checkout itself, and a comped plan has no money behind it.
             return response()->json(['preview' => null]);
         }
-
-        $price = PlanPrice::findOrFail($request->validated('plan_price_id'));
 
         // The same refusal the change itself would make, so the dialog never
         // quotes a price for a move that will be blocked.
@@ -463,6 +513,13 @@ class BillingController extends Controller
         return $workspace;
     }
 
+    private function refuseWhileLifetime(Workspace $workspace): void
+    {
+        if ($workspace->subscription()->with('planPrice')->first()?->isLifetime()) {
+            throw new WorkspaceAlreadySubscribed($workspace);
+        }
+    }
+
     private function subscriptionPayload(Workspace $workspace): ?array
     {
         $subscription = $workspace->subscription()->with('plan', 'planPrice', 'scheduledPlanPrice.plan')->first();
@@ -475,8 +532,13 @@ class BillingController extends Controller
 
         return [
             'plan' => $subscription->plan->name,
+            // The page offers a switch on every price but this one - including
+            // the same plan on other terms, such as monthly to lifetime.
+            'price_id' => $subscription->plan_price_id,
             'status' => $subscription->status->value,
             'billing_source' => $subscription->billing_source->value,
+            // Paid once and never renewed: nothing to cancel, no renewal date.
+            'is_lifetime' => $subscription->isLifetime(),
             'trial_ends_at' => $subscription->trial_ends_at,
             'current_period_end' => $subscription->current_period_end,
             // The renewal is cancelled and access ends at current_period_end
@@ -548,10 +610,11 @@ class BillingController extends Controller
     /** @return array<string, mixed> */
     private function addonPayload(Workspace $workspace): array
     {
-        $subscription = $workspace->subscription()->with('plan.addons.prices', 'items.addon')->first();
+        $subscription = $workspace->subscription()->with('plan.addons.prices', 'items.addon', 'planPrice')->first();
 
-        if ($subscription === null) {
-            // Nothing to attach a paid add-on to without a subscription.
+        // Nothing to attach a paid add-on to without a subscription - and a
+        // lifetime plan has no Dodo subscription to charge one on either.
+        if ($subscription === null || $subscription->isLifetime()) {
             return ['available' => [], 'owned' => []];
         }
 

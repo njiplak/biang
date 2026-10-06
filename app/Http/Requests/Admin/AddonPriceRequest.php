@@ -16,7 +16,9 @@ class AddonPriceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'billing_interval' => ['required', new Enum(BillingInterval::class)],
+            // An add-on is charged on the subscription it hangs off, and a
+            // lifetime plan has no subscription for it to hang off.
+            'billing_interval' => ['required', (new Enum(BillingInterval::class))->except([BillingInterval::Lifetime])],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'amount_minor' => ['required', 'integer', 'min:0'],
         ];

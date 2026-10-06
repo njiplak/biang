@@ -80,9 +80,11 @@ export default function Register({
                 invitedTo
                     ? 'Create your account to accept the invitation'
                     : plan
-                      ? plan.trial_days === null
-                          ? `Subscribe to ${plan.name}`
-                          : `Start your ${plan.trial_days}-day ${plan.name} trial`
+                      ? plan.interval === 'lifetime'
+                          ? `Get ${plan.name} for life`
+                          : plan.trial_days === null
+                            ? `Subscribe to ${plan.name}`
+                            : `Start your ${plan.trial_days}-day ${plan.name} trial`
                       : 'Choose a plan once you are in'
             }
         >
@@ -94,8 +96,10 @@ export default function Register({
                 <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
                     <span className="font-medium">{plan.name}</span>
                     <span className="text-muted-foreground">
-                        {money(plan.amount_minor, plan.currency)}/
-                        {plan.interval}
+                        {money(plan.amount_minor, plan.currency)}
+                        {plan.interval === 'lifetime'
+                            ? ' once, for life'
+                            : `/${plan.interval}`}
                         {plan.trial_days !== null &&
                             ` after ${plan.trial_days} days`}
                     </span>

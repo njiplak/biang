@@ -16,8 +16,11 @@ use App\Enums\CancellationFeedback;
 use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\AddonNotAvailable;
 use App\Exceptions\Domain\DowngradeBlocked;
+use App\Exceptions\Domain\LifetimeNotCancellable;
 use App\Exceptions\Domain\NoActiveSubscription;
+use App\Exceptions\Domain\PlanChangeRequiresCheckout;
 use App\Exceptions\Domain\PlanChangeScheduled;
+use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\TrialAlreadyConsumed;
 use App\Exceptions\Domain\TrialNotExtendable;
 use App\Exceptions\Domain\TrialNotOffered;
@@ -251,6 +254,15 @@ class SubscriptionService implements SubscriptionContract
             return $subscription->refresh();
         }
 
+        /*
+         * Onto, off, or up a lifetime plan is a new payment. A lifetime plan
+         * has no Dodo subscription, so the call to them below is skipped - and
+         * moved in place, the plan changed and nobody was charged.
+         */
+        if ($this->changeNeedsCheckout($subscription, $price)) {
+            throw new PlanChangeRequiresCheckout($price);
+        }
+
         // Section 7: "The downgrade is blocked until they remove three people."
         // Before the money, so a refusal costs nothing to unwind.
         $this->assertPlanFits($workspace, $price);
@@ -319,6 +331,70 @@ class SubscriptionService implements SubscriptionContract
         ));
 
         return $changed;
+    }
+
+    public function changeNeedsCheckout(Subscription $current, PlanPrice $to): bool
+    {
+        $from = $current->planPrice;
+
+        if ((int) $from->id === (int) $to->id || (! $from->isLifetime() && ! $to->isLifetime())) {
+            return false;
+        }
+
+        if ($from->isLifetime() && $to->isLifetime()) {
+            // The difference between two prices only means something in one currency.
+            if ($from->currency !== $to->currency) {
+                throw new PlanChangeUnavailable('a lifetime plan cannot move to another currency');
+            }
+
+            // Down or across costs nothing, and lifetime is not refunded.
+            return $to->amount_minor > $from->amount_minor;
+        }
+
+        return true;
+    }
+
+    public function planChangeCost(Subscription $current, PlanPrice $to): int
+    {
+        if (! $this->changeNeedsCheckout($current, $to)) {
+            return 0;
+        }
+
+        return $current->isLifetime() && $to->isLifetime()
+            ? $to->amount_minor - $current->planPrice->amount_minor
+            : $to->amount_minor;
+    }
+
+    public function checkoutForPlanChange(Workspace $workspace, PlanPrice $price, User $buyer, string $returnUrl): ?string
+    {
+        $subscription = $this->requireSubscription($workspace);
+
+        if (! $this->changeNeedsCheckout($subscription, $price)) {
+            return null;
+        }
+
+        // Section 7: refused before anybody reaches a card form.
+        $this->assertPlanFits($workspace, $price);
+
+        if ($subscription->isLifetime() && $price->isLifetime()) {
+            return $this->gateway->createLifetimeUpgradeCheckout(
+                $workspace,
+                $subscription->planPrice,
+                $price,
+                $this->planChangeCost($subscription, $price),
+                $buyer,
+                $returnUrl,
+                $returnUrl,
+            );
+        }
+
+        /*
+         * Onto or off lifetime is a purchase at full price. One side has no
+         * Dodo subscription, so there is nothing to prorate - and no trial
+         * either, because this workspace is already a customer. The plan it is
+         * leaving ends when the reconciler sees the new one paid for.
+         */
+        return $this->gateway->createCheckout($workspace, $price, $buyer, $returnUrl, $returnUrl);
     }
 
     /**
@@ -470,6 +546,13 @@ class SubscriptionService implements SubscriptionContract
         ?string $comment = null,
     ): void {
         $subscription = $this->liveSubscription($workspace);
+
+        // Nothing renews, so cancelling could only throw away what was paid
+        // for. Closing the workspace goes through cancel() and still ends it.
+        if ($subscription?->isLifetime()) {
+            throw new LifetimeNotCancellable($workspace);
+        }
+
         $endsAt = $subscription === null ? null : $this->paidThrough($subscription);
 
         if ($subscription === null || $endsAt === null) {
@@ -727,6 +810,12 @@ class SubscriptionService implements SubscriptionContract
 
     private function assertPurchasable(Subscription $subscription, Addon $addon, AddonPrice $price): void
     {
+        // An add-on is charged on the Dodo subscription it hangs off. A lifetime
+        // plan has none, so chargeAddons() would skip the charge and hand it over free.
+        if ($subscription->isLifetime()) {
+            throw new AddonNotAvailable($addon, 'not sold on a lifetime plan');
+        }
+
         if ($price->archived_at !== null || $addon->archived_at !== null) {
             throw new AddonNotAvailable($addon, 'retired');
         }
@@ -839,7 +928,8 @@ class SubscriptionService implements SubscriptionContract
             'plan_id' => $price->plan_id,
             'plan_price_id' => $price->id,
             'current_period_start' => now(),
-            'current_period_end' => now()->addMonth(),
+            // A lifetime plan granted by hand has no period to end.
+            'current_period_end' => $price->isLifetime() ? null : now()->addMonth(),
         ], $attributes));
     }
 

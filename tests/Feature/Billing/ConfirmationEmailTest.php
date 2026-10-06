@@ -82,3 +82,19 @@ it('leaves the support line out until one is set', function () {
 
     expect(implode("\n", array_merge($mail->introLines, $mail->outroLines)))->not->toContain('Contact us');
 });
+
+// A lifetime price is paid once, so "per lifetime" would read as nonsense.
+it('describes a lifetime price as paid once', function () {
+    $lifetime = App\Models\PlanPrice::factory()->for($this->proPrice->plan)->create([
+        'billing_interval' => App\Enums\BillingInterval::Lifetime,
+        'amount_minor' => 49_900,
+    ]);
+
+    $mail = PlanChangedNotification::for($this->workspace, 'Starter', $lifetime, false)
+        ->toMail($this->owner);
+
+    $lines = implode("\n", $mail->introLines);
+
+    expect($lines)->toContain('USD 499.00 one-time')
+        ->and($lines)->not->toContain('per lifetime');
+});

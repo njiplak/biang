@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 
 type Price = {
     id: number;
+    // 'month' | 'year' | 'lifetime'. Lifetime is paid once and never renews.
     interval: string;
     currency: string;
     amount_minor: number;
@@ -75,8 +76,11 @@ type Props = {
     };
     subscription: {
         plan: string;
+        price_id: number;
         status: string;
         billing_source: string;
+        // paid once and never renewed: nothing to cancel, no renewal date
+        is_lifetime: boolean;
         trial_ends_at: string | null;
         current_period_end: string | null;
         // cancelled at the period end; access runs until paid_through
@@ -117,6 +121,12 @@ const money = (minor: number, currency: string) =>
     new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(
         minor / 100,
     );
+
+// "/lifetime" reads as nonsense: a lifetime price is paid once.
+const priceLabel = (minor: number, currency: string, interval: string) =>
+    interval === 'lifetime'
+        ? `${money(minor, currency)} once`
+        : `${money(minor, currency)}/${interval}`;
 
 export default function BillingIndex({
     workspace,
@@ -245,16 +255,20 @@ function CurrentPlan({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <span>
                             {subscription.plan} ·{' '}
-                            {money(
+                            {priceLabel(
                                 subscription.amount_minor,
                                 subscription.currency,
+                                subscription.interval,
                             )}
-                            /{subscription.interval}
+                            {subscription.is_lifetime && ' · lifetime'}
                             {subscription.billing_source === 'manual' &&
                                 ' · granted by our team'}
                         </span>
                         <span className="flex items-center gap-1">
-                            {subscription.cancel_at_period_end ? (
+                            {/* Nothing renews, so there is nothing to cancel:
+                                the button could only throw away what was paid
+                                for. */}
+                            {subscription.is_lifetime ? null : subscription.cancel_at_period_end ? (
                                 /* Only while there is time left to keep. */
                                 subscription.paid_through && (
                                     <Button
@@ -362,7 +376,11 @@ function RenewalLine({
 }: {
     subscription: NonNullable<Props['subscription']>;
 }) {
-    const price = `${money(subscription.amount_minor, subscription.currency)}/${subscription.interval}`;
+    const price = priceLabel(
+        subscription.amount_minor,
+        subscription.currency,
+        subscription.interval,
+    );
 
     if (subscription.cancel_at_period_end) {
         // No date left means the period has run out and the provider's
@@ -380,6 +398,15 @@ function RenewalLine({
 
     if (subscription.billing_source === 'manual') {
         return <>Granted by our team — you are not charged for it.</>;
+    }
+
+    if (subscription.is_lifetime) {
+        return (
+            <>
+                Paid once — this plan never renews and you will not be charged
+                again.
+            </>
+        );
     }
 
     if (subscription.status === 'past_due') {
@@ -478,7 +505,9 @@ function Plans({
                                     ? bestSaving > 0
                                         ? `Annual (save up to ${bestSaving}%)`
                                         : 'Annual'
-                                    : 'Monthly'}
+                                    : option === 'lifetime'
+                                      ? 'Lifetime'
+                                      : 'Monthly'}
                             </button>
                         ))}
                     </div>
@@ -547,14 +576,20 @@ function Plans({
 
                         <span className="flex flex-wrap items-center gap-2">
                             <span className="text-muted-foreground">
-                                {money(price.amount_minor, price.currency)}/
-                                {price.interval}
+                                {priceLabel(
+                                    price.amount_minor,
+                                    price.currency,
+                                    price.interval,
+                                )}
                                 {price.interval === 'year' &&
                                     (annualSaving(plan) ?? 0) > 0 &&
                                     ` · save ${annualSaving(plan)}%`}
                             </span>
 
-                            {!plan.is_current &&
+                            {/* Per price, not per plan: moving onto the same
+                                plan on other terms - monthly to lifetime - is
+                                a change too. */}
+                            {price.id !== subscription?.price_id &&
                                 !scheduled &&
                                 (subscription ? (
                                     /* Prorated by Dodo, so the number has to
@@ -563,6 +598,14 @@ function Plans({
                                         planName={plan.name}
                                         priceId={price.id}
                                         disabled={blocked}
+                                        involvesLifetime={
+                                            subscription.is_lifetime ||
+                                            price.interval === 'lifetime'
+                                        }
+                                        leavesLifetime={
+                                            subscription.is_lifetime &&
+                                            price.interval !== 'lifetime'
+                                        }
                                     />
                                 ) : (
                                     <Button
@@ -577,7 +620,9 @@ function Plans({
                                             )
                                         }
                                     >
-                                        Subscribe
+                                        {price.interval === 'lifetime'
+                                            ? 'Buy lifetime'
+                                            : 'Subscribe'}
                                     </Button>
                                 ))}
 

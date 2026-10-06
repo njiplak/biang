@@ -37,6 +37,7 @@ export default function BillingWelcome({ workspace, subscription }: Props) {
     const price = `${money(subscription.amount_minor, subscription.currency)}/${subscription.interval}`;
     const trialing =
         subscription.status === 'trialing' && subscription.trial_ends_at;
+    const lifetime = subscription.interval === 'lifetime';
 
     return (
         <AppLayout>
@@ -53,9 +54,11 @@ export default function BillingWelcome({ workspace, subscription }: Props) {
                     <p className="text-sm text-muted-foreground">
                         {trialing
                             ? `Everything in ${subscription.plan} is open to your team until ${date(subscription.trial_ends_at!)}. Your card is then charged ${price}, plus tax, unless you cancel before - we will email you 3 days and 1 day ahead.`
-                            : subscription.current_period_end
-                              ? `Your subscription renews on ${date(subscription.current_period_end)} at ${price}, plus tax.`
-                              : `You are subscribed at ${price}, plus tax.`}
+                            : lifetime
+                              ? `Paid once - ${subscription.plan} is yours for good, and you will not be charged again.`
+                              : subscription.current_period_end
+                                ? `Your subscription renews on ${date(subscription.current_period_end)} at ${price}, plus tax.`
+                                : `You are subscribed at ${price}, plus tax.`}
                     </p>
                 </div>
 

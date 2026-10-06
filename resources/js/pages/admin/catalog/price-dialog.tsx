@@ -108,6 +108,14 @@ export function PriceDialog({
                             <SelectContent>
                                 <SelectItem value="month">Monthly</SelectItem>
                                 <SelectItem value="year">Yearly</SelectItem>
+                                {/* An add-on is charged on the subscription
+                                    it hangs off, which a lifetime plan has
+                                    none of - so only plans sell one. */}
+                                {plan && (
+                                    <SelectItem value="lifetime">
+                                        Lifetime (paid once)
+                                    </SelectItem>
+                                )}
                             </SelectContent>
                         </Select>
                         <InputError message={form.errors.billing_interval} />

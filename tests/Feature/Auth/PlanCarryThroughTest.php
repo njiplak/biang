@@ -440,3 +440,31 @@ it('shows the customer why the card form did not open', function () {
             ->where('flash.warning', fn (?string $warning) => $warning !== null
                 && str_contains($warning, 'not available right now')));
 });
+
+// Signing up for lifetime ends at the lifetime checkout: paid once, no trial.
+it('carries a lifetime choice from the signup link to the card form', function () {
+    $gateway = fakeGateway();
+
+    $lifetime = PlanPrice::factory()->for(Plan::firstWhere('code', 'pro'))->create([
+        'billing_interval' => App\Enums\BillingInterval::Lifetime,
+        'amount_minor' => 49_900,
+        'dodo_product_id' => 'prod_pro_lifetime',
+        'dodo_upgrade_product_id' => 'upgrade_pro_lifetime',
+    ]);
+
+    $this->get(route('register', ['plan' => 'pro', 'interval' => 'lifetime']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('plan.interval', 'lifetime')
+            ->where('plan.amount_minor', 49_900)
+            ->where('plan.trial_days', null));
+
+    signUpWith(['plan' => 'pro', 'interval' => 'lifetime']);
+
+    $this->post(route('workspace.store'), ['name' => 'Acme Inc'])
+        ->assertRedirect('https://checkout.dodopayments.test/session/abc');
+
+    expect($gateway->checkouts)->toHaveCount(1)
+        ->and($gateway->checkouts[0]['plan_price_id'])->toBe($lifetime->id)
+        ->and($gateway->checkouts[0]['trial_period_days'])->toBeNull();
+});

@@ -2,7 +2,8 @@
 
 export type CatalogPrice = {
     id: number;
-    interval: 'month' | 'year';
+    // Only a plan price is ever 'lifetime'; add-ons renew with a subscription.
+    interval: 'month' | 'year' | 'lifetime';
     currency: string;
     amount_minor: number;
     is_archived: boolean;

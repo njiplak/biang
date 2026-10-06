@@ -173,6 +173,17 @@ export default function AdminDashboard({
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between">
+                                    <span>
+                                        Lifetime
+                                        <span className="ml-1 text-muted-foreground">
+                                            (paid once, not in MRR)
+                                        </span>
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {revenue.lifetime_count}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
                                     <span>Signups this week</span>
                                     <span className="text-muted-foreground">
                                         {revenue.signups.users_this_week} people

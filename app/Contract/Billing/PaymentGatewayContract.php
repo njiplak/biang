@@ -44,6 +44,28 @@ interface PaymentGatewayContract
     ): string;
 
     /**
+     * Start a hosted checkout for a lifetime customer moving up a lifetime
+     * tier, charging $amountMinor - the difference - once.
+     *
+     * Dodo cannot prorate this: a lifetime plan is a payment, not a
+     * subscription. So the sale goes through $to's pay-what-you-want upgrade
+     * product with the amount set here, and $from rides in the metadata so the
+     * reconciler can check, when the money lands, that the workspace is still
+     * on the plan the difference was worked out from.
+     *
+     * @throws \App\Exceptions\Domain\CheckoutUnavailable
+     */
+    public function createLifetimeUpgradeCheckout(
+        Workspace $workspace,
+        PlanPrice $from,
+        PlanPrice $to,
+        int $amountMinor,
+        User $buyer,
+        string $returnUrl,
+        string $cancelUrl,
+    ): string;
+
+    /**
      * A one-time link into Dodo's own page for this workspace, where the card
      * and the invoices live (section 8 puts both on their side).
      *
@@ -65,6 +87,9 @@ interface PaymentGatewayContract
      * product, and section 10 lets staff create prices "without an engineer" -
      * so the publishing has to be part of the catalogue, not a deploy.
      *
+     * A lifetime price becomes a one-time product: it is paid once and never
+     * renewed, so there is no subscription for Dodo to hold.
+     *
      * @throws \App\Exceptions\Domain\ProductPublishFailed
      */
     public function publishProduct(
@@ -72,6 +97,22 @@ interface PaymentGatewayContract
         string $currency,
         int $amountMinor,
         BillingInterval $interval,
+        ?string $description = null,
+    ): string;
+
+    /**
+     * Create the pay-what-you-want one-time product a lifetime price is
+     * upgraded TO through, returning their id for it.
+     *
+     * Bought only through createLifetimeUpgradeCheckout, which sets the amount.
+     * Its own minimum is zero because the difference between two tiers is ours
+     * to work out per sale, not a price the product can carry.
+     *
+     * @throws \App\Exceptions\Domain\ProductPublishFailed
+     */
+    public function publishLifetimeUpgrade(
+        string $name,
+        string $currency,
         ?string $description = null,
     ): string;
 

@@ -29,8 +29,38 @@ interface SubscriptionContract
      */
     public function extendTrial(Workspace $workspace, int $days, AdminUser $admin, string $reason): Subscription;
 
-    /** Throws DowngradeBlocked when the new plan cannot hold current usage. */
+    /**
+     * Throws DowngradeBlocked when the new plan cannot hold current usage, and
+     * PlanChangeRequiresCheckout for a move that is a new payment - see
+     * changeNeedsCheckout.
+     */
     public function changePlan(Workspace $workspace, PlanPrice $price): Subscription;
+
+    /**
+     * Whether moving $current onto $to is a new payment rather than a change
+     * made in place: onto a lifetime plan, off one, or up a lifetime tier.
+     * There is no Dodo subscription on at least one side of those, so nothing
+     * for them to prorate.
+     *
+     * @throws \App\Exceptions\Domain\PlanChangeUnavailable for a lifetime move into another currency
+     */
+    public function changeNeedsCheckout(Subscription $current, PlanPrice $to): bool;
+
+    /**
+     * What the checkout for that move charges, before tax: the difference for
+     * a lifetime upgrade, the full price otherwise, and 0 for a move made in
+     * place.
+     */
+    public function planChangeCost(Subscription $current, PlanPrice $to): int;
+
+    /**
+     * Start the checkout a plan change needs and return where to send the
+     * customer, or null when changePlan makes the change in place instead.
+     *
+     * Seats are checked first. Nothing of ours moves here - the plan changes
+     * when the payment's webhook lands.
+     */
+    public function checkoutForPlanChange(Workspace $workspace, PlanPrice $price, User $buyer, string $returnUrl): ?string;
 
     /**
      * How many seats over a plan's allowance this workspace already is, or 0 if

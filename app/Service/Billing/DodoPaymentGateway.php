@@ -22,6 +22,7 @@ use DateTimeInterface;
 use Dodopayments\Client;
 use Dodopayments\Misc\TaxCategory;
 use Dodopayments\Payments\PaymentListParams\Status as PaymentStatus;
+use Dodopayments\Products\Price\OneTimePrice;
 use Dodopayments\Products\Price\RecurringPrice;
 use Dodopayments\Subscriptions\SubscriptionChangePlanParams\EffectiveAt;
 use Dodopayments\Subscriptions\SubscriptionChangePlanParams\ProrationBillingMode;
@@ -92,6 +93,57 @@ class DodoPaymentGateway implements PaymentGatewayContract
             ?? throw new CheckoutUnavailable('the payment provider returned no checkout URL');
     }
 
+    public function createLifetimeUpgradeCheckout(
+        Workspace $workspace,
+        PlanPrice $from,
+        PlanPrice $to,
+        int $amountMinor,
+        User $buyer,
+        string $returnUrl,
+        string $cancelUrl,
+    ): string {
+        if (blank($to->dodo_upgrade_product_id)) {
+            throw new CheckoutUnavailable('the upgrade to this plan is not published to the payment provider yet');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new CheckoutUnavailable('the payment provider is not configured');
+        }
+
+        try {
+            $session = $this->client()->checkoutSessions->create(
+                productCart: [[
+                    'product_id' => $to->dodo_upgrade_product_id,
+                    'quantity' => 1,
+                    // Honoured only on a pay-what-you-want product, which the
+                    // upgrade product is. Set here so the customer pays the
+                    // difference rather than choosing what to pay.
+                    'amount' => $amountMinor,
+                ]],
+                customer: [
+                    'email' => $buyer->email,
+                    'name' => $buyer->name,
+                ],
+                metadata: [
+                    'workspace_ulid' => $workspace->ulid,
+                    'plan_price_id' => (string) $to->id,
+                    // What the difference was worked out from. The reconciler
+                    // refuses the upgrade if the workspace has moved off it
+                    // before the payment lands.
+                    'upgrade_from_plan_price_id' => (string) $from->id,
+                    'started_by_user_id' => (string) $buyer->id,
+                ],
+                returnURL: $returnUrl,
+                cancelURL: $cancelUrl,
+            );
+        } catch (Throwable $e) {
+            throw new CheckoutUnavailable('the payment provider did not respond', $e);
+        }
+
+        return $session->checkoutURL
+            ?? throw new CheckoutUnavailable('the payment provider returned no checkout URL');
+    }
+
     /**
      * Section 5: "open the payment provider's page for cards and invoices."
      *
@@ -146,7 +198,13 @@ class DodoPaymentGateway implements PaymentGatewayContract
         try {
             $product = $this->client()->products->create(
                 name: $name,
-                price: RecurringPrice::with(
+                // Paid once and never renewed: a one-time product, with no
+                // subscription for Dodo to hold.
+                price: $interval === BillingInterval::Lifetime ? OneTimePrice::with(
+                    currency: $currency,
+                    discount: 0,
+                    price: $amountMinor,
+                ) : RecurringPrice::with(
                     currency: $currency,
                     discount: 0,
                     // Both counts are 1 of the SAME unit: an annual plan is one
@@ -158,6 +216,36 @@ class DodoPaymentGateway implements PaymentGatewayContract
                     price: $amountMinor,
                     subscriptionPeriodCount: 1,
                     subscriptionPeriodInterval: $this->interval($interval),
+                ),
+                taxCategory: TaxCategory::SAAS,
+                description: $description,
+            );
+        } catch (Throwable $e) {
+            throw new ProductPublishFailed('the payment provider rejected it', $e);
+        }
+
+        return $product->productID;
+    }
+
+    public function publishLifetimeUpgrade(
+        string $name,
+        string $currency,
+        ?string $description = null,
+    ): string {
+        if (blank(config('dodo.api_key'))) {
+            throw new ProductPublishFailed('the payment provider is not configured');
+        }
+
+        try {
+            $product = $this->client()->products->create(
+                name: $name,
+                // `price` is the MINIMUM on a pay-what-you-want product. The
+                // real amount is set per checkout, so the floor is zero.
+                price: OneTimePrice::with(
+                    currency: $currency,
+                    discount: 0,
+                    price: 0,
+                    payWhatYouWant: true,
                 ),
                 taxCategory: TaxCategory::SAAS,
                 description: $description,
@@ -594,6 +682,7 @@ class DodoPaymentGateway implements PaymentGatewayContract
         return match ($interval) {
             BillingInterval::Month => TimeInterval::MONTH,
             BillingInterval::Year => TimeInterval::YEAR,
+            BillingInterval::Lifetime => throw new ProductPublishFailed('a lifetime price has no billing interval'),
         };
     }
 

@@ -116,6 +116,7 @@ class CatalogController extends Controller
 
         $this->audit->record('catalog.price_published', null, $price->refresh(), [
             'dodo_product_id' => $price->dodo_product_id,
+            'dodo_upgrade_product_id' => $price instanceof PlanPrice ? $price->dodo_upgrade_product_id : null,
         ]);
 
         return back();

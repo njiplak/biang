@@ -45,6 +45,12 @@ class FakePaymentGateway implements PaymentGatewayContract
     /** @var list<array<string, mixed>> */
     public array $publishedAddons = [];
 
+    /** @var list<array<string, mixed>> lifetime upgrade products, in call order */
+    public array $publishedUpgrades = [];
+
+    /** @var list<array<string, mixed>> lifetime upgrade checkouts, in call order */
+    public array $upgradeCheckouts = [];
+
     /** @var list<array<string, mixed>> */
     public array $planChanges = [];
 
@@ -93,6 +99,8 @@ class FakePaymentGateway implements PaymentGatewayContract
 
     public int $nextAddonId = 1;
 
+    public int $nextUpgradeId = 1;
+
     private bool $broken = false;
 
     public string $checkoutUrl = 'https://checkout.dodopayments.test/session/abc';
@@ -133,6 +141,35 @@ class FakePaymentGateway implements PaymentGatewayContract
         return $this->checkoutUrl;
     }
 
+    public function createLifetimeUpgradeCheckout(
+        Workspace $workspace,
+        PlanPrice $from,
+        PlanPrice $to,
+        int $amountMinor,
+        User $buyer,
+        string $returnUrl,
+        string $cancelUrl,
+    ): string {
+        if ($this->broken) {
+            throw new CheckoutUnavailable('the payment provider did not respond');
+        }
+
+        if (blank($to->dodo_upgrade_product_id)) {
+            throw new CheckoutUnavailable('the upgrade to this plan is not published to the payment provider yet');
+        }
+
+        $this->upgradeCheckouts[] = [
+            'workspace' => $workspace->ulid,
+            'product_id' => $to->dodo_upgrade_product_id,
+            'plan_price_id' => $to->id,
+            'upgrade_from_plan_price_id' => $from->id,
+            'amount_minor' => $amountMinor,
+            'buyer' => $buyer->email,
+        ];
+
+        return $this->checkoutUrl;
+    }
+
     public function customerPortalUrl(Workspace $workspace, string $returnUrl): string
     {
         if ($this->broken) {
@@ -166,6 +203,24 @@ class FakePaymentGateway implements PaymentGatewayContract
         ];
 
         return 'prod_'.$this->nextProductId++;
+    }
+
+    public function publishLifetimeUpgrade(
+        string $name,
+        string $currency,
+        ?string $description = null,
+    ): string {
+        if ($this->broken) {
+            throw new ProductPublishFailed('the payment provider did not respond');
+        }
+
+        $this->publishedUpgrades[] = [
+            'name' => $name,
+            'currency' => $currency,
+            'description' => $description,
+        ];
+
+        return 'upgrade_'.$this->nextUpgradeId++;
     }
 
     public function publishAddon(

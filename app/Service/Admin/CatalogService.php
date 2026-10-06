@@ -298,7 +298,8 @@ class CatalogService implements CatalogContract
                 'currency' => $price->currency,
                 'amount_minor' => $price->amount_minor,
                 'is_archived' => $price->archived_at !== null,
-                'is_published' => filled($price->dodo_product_id),
+                // A lifetime price is two products at Dodo; see PlanPrice::isPublished.
+                'is_published' => $price->isPublished(),
             ])->values()->all(),
             'addon_ids' => $plan->addons->pluck('id')->all(),
         ];

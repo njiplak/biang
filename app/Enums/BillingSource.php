@@ -16,8 +16,9 @@ enum BillingSource: string
     case Dodo = 'dodo';
     case Manual = 'manual';
 
-    public function requiresProviderId(): bool
-    {
-        return $this === self::Dodo;
-    }
+    /**
+     * A lifetime plan bought through Dodo: one payment, no subscription. Its
+     * provider record is the payment, held in `dodo_payment_id`.
+     */
+    case DodoOneTime = 'dodo_one_time';
 }

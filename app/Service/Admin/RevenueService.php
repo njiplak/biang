@@ -48,6 +48,13 @@ class RevenueService implements RevenueContract
             // and real usage, and zero revenue.
             'comped_count' => $paying->where('billing_source', BillingSource::Manual)->count(),
 
+            // Paying customers who contribute nothing to MRR because they paid
+            // once. Comped lifetime grants are already counted above.
+            'lifetime_count' => $paying
+                ->where('billing_source', BillingSource::DodoOneTime)
+                ->filter(fn (Subscription $subscription) => $subscription->isLifetime())
+                ->count(),
+
             'signups' => $this->signups(),
             'trials' => $this->trials(),
             'churn' => $this->churn(),
@@ -376,6 +383,9 @@ class RevenueService implements RevenueContract
                 return match ($price->billing_interval) {
                     BillingInterval::Month => $price->amount_minor,
                     BillingInterval::Year => (int) round($price->amount_minor / 12),
+                    // Paid once. Spreading it over months would report revenue
+                    // that is never coming again.
+                    BillingInterval::Lifetime => 0,
                 };
             });
     }

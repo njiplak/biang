@@ -240,6 +240,27 @@ it('does not mistake a comped subscription for a broken sync', function () {
     expect($this->ops->overview()['integrity'])->toBeEmpty();
 });
 
+// A lifetime purchase's provider record is the payment, not a subscription.
+it('raises an alarm on a lifetime purchase with no payment id', function () {
+    $this->subscription->update([
+        'billing_source' => BillingSource::DodoOneTime,
+        'dodo_subscription_id' => null,
+        'dodo_payment_id' => null,
+    ]);
+
+    expect($this->ops->overview()['integrity'])->toHaveCount(1);
+});
+
+it('does not alarm on a lifetime purchase that has its payment id', function () {
+    $this->subscription->update([
+        'billing_source' => BillingSource::DodoOneTime,
+        'dodo_subscription_id' => null,
+        'dodo_payment_id' => 'pay_lt_1',
+    ]);
+
+    expect($this->ops->overview()['integrity'])->toBeEmpty();
+});
+
 it('ignores a subscription that already ended', function () {
     $this->subscription->update([
         'billing_source' => BillingSource::Dodo,

@@ -10,6 +10,7 @@ use App\Enums\BillingSource;
 use App\Enums\BillingStatus;
 use App\Enums\DunningResolution;
 use App\Enums\SubscriptionStatus;
+use App\Jobs\CancelReplacedSubscription;
 use App\Models\DunningState;
 use App\Models\InvoiceSummary;
 use App\Models\PlanPrice;
@@ -17,6 +18,7 @@ use App\Models\Subscription;
 use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Models\Workspace;
+use App\Notifications\Billing\PlanChangedNotification;
 use App\Notifications\Billing\SubscriptionCanceledNotification;
 use App\Support\ProductEvents;
 use Illuminate\Support\Carbon;
@@ -55,6 +57,27 @@ class DodoReconciler implements ReconcilerContract
 
         DB::transaction(function () use ($event) {
             $data = $event->payload['data'] ?? [];
+
+            /*
+             * A lifetime purchase, or an attempt at one: a payment with no
+             * subscription, for a lifetime price. There is no subscription to
+             * locate, and falling through to the workspace's live one is how a
+             * declined lifetime card would open a dunning episode on a card
+             * that is fine.
+             */
+            if ($this->isLifetimePayment($event->event_type, $data)) {
+                $this->reconcileOneTimePayment($event, $data);
+
+                return;
+            }
+
+            // Money taken back from a lifetime purchase. Any other refund or
+            // dispute is recorded below exactly as before.
+            if (in_array($event->event_type, ['refund.succeeded', 'dispute.lost'], true)
+                && $this->reconcileLifetimeReversal($event, $data)) {
+                return;
+            }
+
             $subscription = $this->locate($data, $event->event_type);
 
             if ($subscription === null) {
@@ -79,6 +102,24 @@ class DodoReconciler implements ReconcilerContract
                 $event->update([
                     'processed_at' => now(),
                     'error' => 'Ignored: older than the state already recorded.',
+                ]);
+
+                return;
+            }
+
+            /*
+             * Ended, and another plan is live in its place. Its cancellation
+             * echoing back used to settle the workspace as unpaid - taking away
+             * the plan that replaced it - and a renewal would have revived it
+             * into a second live subscription.
+             */
+            if ($this->isReplaced($subscription)) {
+                $this->applyToReplaced($event, $subscription, $data);
+
+                $event->update([
+                    'processed_at' => now(),
+                    'workspace_id' => $subscription->workspace_id,
+                    'error' => 'Ignored: this subscription was replaced by another plan.',
                 ]);
 
                 return;
@@ -392,24 +433,7 @@ class DodoReconciler implements ReconcilerContract
      */
     private function paymentSucceeded(Subscription $subscription, Workspace $workspace, array $data): void
     {
-        $paymentId = $data['payment_id'] ?? null;
-
-        if ($paymentId !== null) {
-            InvoiceSummary::withoutWorkspaceScope()->updateOrCreate(
-                ['dodo_invoice_id' => $paymentId],
-                [
-                    'workspace_id' => $workspace->id,
-                    'subscription_id' => $subscription->id,
-                    'status' => 'paid',
-                    'currency' => $data['currency'] ?? 'USD',
-                    'subtotal_minor' => (int) ($data['settlement_amount'] ?? $data['total_amount'] ?? 0),
-                    'tax_minor' => (int) ($data['tax'] ?? 0),
-                    'total_minor' => (int) ($data['total_amount'] ?? 0),
-                    'issued_at' => $this->date($data, 'created_at') ?? now(),
-                    'paid_at' => now(),
-                ],
-            );
-        }
+        $this->recordInvoice($subscription, $workspace, $data);
 
         // A payment landing is the clearest possible signal that dunning is over.
         $this->resolveDunning($subscription, DunningResolution::Recovered);
@@ -431,6 +455,34 @@ class DodoReconciler implements ReconcilerContract
             $subscription->update(['status' => SubscriptionStatus::Active]);
             $this->settle($workspace, BillingStatus::Active);
         }
+    }
+
+    /**
+     * Keyed on their payment id, so a redelivery or a pull of the same payment
+     * updates the one row. Every figure copied, never computed.
+     */
+    private function recordInvoice(?Subscription $subscription, Workspace $workspace, array $data): void
+    {
+        $paymentId = $data['payment_id'] ?? null;
+
+        if ($paymentId === null) {
+            return;
+        }
+
+        InvoiceSummary::withoutWorkspaceScope()->updateOrCreate(
+            ['dodo_invoice_id' => $paymentId],
+            [
+                'workspace_id' => $workspace->id,
+                'subscription_id' => $subscription?->id,
+                'status' => 'paid',
+                'currency' => $data['currency'] ?? 'USD',
+                'subtotal_minor' => (int) ($data['settlement_amount'] ?? $data['total_amount'] ?? 0),
+                'tax_minor' => (int) ($data['tax'] ?? 0),
+                'total_minor' => (int) ($data['total_amount'] ?? 0),
+                'issued_at' => $this->date($data, 'created_at') ?? now(),
+                'paid_at' => now(),
+            ],
+        );
     }
 
     /**
@@ -524,6 +576,16 @@ class DodoReconciler implements ReconcilerContract
             return $this->open($workspace, $data, $eventType, $providerId);
         }
 
+        /*
+         * A lifetime plan never has a subscription id of its own, so an id
+         * arriving for one belongs to a NEW subscription: the customer moving
+         * off lifetime. Adopted below, it would have charged them for the new
+         * plan and left them on the old one.
+         */
+        if ($providerId !== null && $subscription->isLifetime()) {
+            return $this->replaceLifetime($subscription, $workspace, $data, $eventType, $providerId);
+        }
+
         // First sighting: adopt the provider's id so every later event for this
         // subscription finds it directly.
         if ($providerId !== null && $subscription->dodo_subscription_id === null) {
@@ -554,13 +616,7 @@ class DodoReconciler implements ReconcilerContract
      */
     private function open(Workspace $workspace, array $data, string $eventType, ?string $providerId): ?Subscription
     {
-        $opens = in_array($eventType, [
-            'subscription.active',
-            'subscription.renewed',
-            'payment.succeeded',
-        ], true);
-
-        if (! $opens || $providerId === null) {
+        if (! $this->opensSubscription($eventType) || $providerId === null) {
             return null;
         }
 
@@ -584,6 +640,341 @@ class DodoReconciler implements ReconcilerContract
             'billing_source' => BillingSource::Dodo,
             'dodo_subscription_id' => $providerId,
             'current_period_start' => now(),
+        ]);
+    }
+
+    /** The events that mean a subscription EXISTS and is live. */
+    private function opensSubscription(string $eventType): bool
+    {
+        return in_array($eventType, [
+            'subscription.active',
+            'subscription.renewed',
+            'payment.succeeded',
+        ], true);
+    }
+
+    /**
+     * End a lifetime plan for the subscription that replaces it.
+     *
+     * Only for an event that establishes a subscription we can place. Ending
+     * the lifetime plan for one we cannot would leave the customer with
+     * neither; anything else for an id we have never stored stays unmatched,
+     * as it would for a workspace with nothing live.
+     */
+    private function replaceLifetime(Subscription $lifetime, Workspace $workspace, array $data, string $eventType, string $providerId): ?Subscription
+    {
+        if (! $this->opensSubscription($eventType) || PlanPrice::find($data['metadata']['plan_price_id'] ?? null) === null) {
+            return null;
+        }
+
+        $this->endReplaced($lifetime);
+
+        return $this->open($workspace, $data, $eventType, $providerId);
+    }
+
+    /**
+     * Expired rather than canceled, and canceled_at left empty: the churn
+     * figures count canceled_at, and moving to another plan is not leaving.
+     */
+    private function endReplaced(Subscription $subscription): void
+    {
+        $subscription->update([
+            'status' => SubscriptionStatus::Expired,
+            'ended_at' => now(),
+        ]);
+
+        $this->resolveDunning($subscription, DunningResolution::Canceled);
+    }
+
+    private function isReplaced(Subscription $subscription): bool
+    {
+        return ! $subscription->status->isLive()
+            && Subscription::withoutWorkspaceScope()
+                ->where('workspace_id', $subscription->workspace_id)
+                ->whereKeyNot($subscription->id)
+                ->live()
+                ->exists();
+    }
+
+    /**
+     * Only the money is kept from an event for a replaced subscription. If Dodo
+     * reports it still running, they are still charging for it - so they are
+     * asked to stop again.
+     */
+    private function applyToReplaced(WebhookEvent $event, Subscription $subscription, array $data): void
+    {
+        if ($event->event_type === 'payment.succeeded') {
+            $this->recordInvoice($subscription, $subscription->workspace()->withTrashed()->first(), $data);
+        }
+
+        $stillRunning = in_array($event->event_type, ['subscription.active', 'subscription.renewed'], true)
+            || (in_array($event->event_type, ['subscription.updated', 'subscription.plan_changed'], true)
+                && ($data['status'] ?? null) === 'active');
+
+        if ($stillRunning && $subscription->isHeldWithProvider()) {
+            CancelReplacedSubscription::dispatch($subscription->id)->afterCommit();
+        }
+    }
+
+    /**
+     * Keyed on the price rather than the missing subscription id alone, so a
+     * payment for anything else keeps going through locate() as it always did.
+     */
+    private function isLifetimePayment(string $eventType, array $data): bool
+    {
+        return str_starts_with($eventType, 'payment.')
+            && blank($data['subscription_id'] ?? null)
+            && PlanPrice::find($data['metadata']['plan_price_id'] ?? null)?->isLifetime() === true;
+    }
+
+    /**
+     * Only a settled lifetime purchase changes a plan; a declined or abandoned
+     * attempt leaves the customer with whatever they already had.
+     */
+    private function reconcileOneTimePayment(WebhookEvent $event, array $data): void
+    {
+        if ($event->event_type !== 'payment.succeeded') {
+            $event->update([
+                'processed_at' => now(),
+                'error' => 'Ignored: a one-time payment that did not succeed changes no plan.',
+            ]);
+
+            return;
+        }
+
+        // isLifetimePayment() has already resolved this to a lifetime price.
+        $price = PlanPrice::findOrFail($data['metadata']['plan_price_id']);
+        $paymentId = $data['payment_id'] ?? null;
+        $ulid = $data['metadata']['workspace_ulid'] ?? null;
+        $workspace = $ulid === null ? null : Workspace::query()->where('ulid', $ulid)->first();
+
+        // Recorded, not processed: money moved and we cannot say what for.
+        if ($paymentId === null || $workspace === null) {
+            $this->refuse($event, 'Lifetime payment names no payment id, or a workspace we do not have.', $workspace);
+
+            return;
+        }
+
+        // The purchase already became a plan on an earlier delivery.
+        if (Subscription::withoutWorkspaceScope()->where('dodo_payment_id', $paymentId)->exists()) {
+            $this->processed($event, $workspace);
+
+            return;
+        }
+
+        $live = Subscription::withoutWorkspaceScope()
+            ->where('workspace_id', $workspace->id)
+            ->live()
+            ->with('planPrice', 'plan')
+            ->first();
+
+        $upgradeFrom = $data['metadata']['upgrade_from_plan_price_id'] ?? null;
+
+        if ($upgradeFrom !== null) {
+            $this->applyLifetimeUpgrade($event, $workspace, $live, $price, (int) $upgradeFrom, $data);
+
+            return;
+        }
+
+        if ($live?->isLifetime()) {
+            $this->recordInvoice($live, $workspace, $data);
+            $this->refuse($event, 'Workspace already holds a lifetime plan; this second purchase was not applied and needs a refund.', $workspace);
+
+            return;
+        }
+
+        $this->openLifetime($event, $workspace, $live, $price, $paymentId, $data);
+    }
+
+    /**
+     * Whatever the workspace had - a subscription, a trial, a plan granted by
+     * hand - is replaced now: that is the moment they paid for something else.
+     * No credit for unused time; the checkout said so before they paid.
+     */
+    private function openLifetime(WebhookEvent $event, Workspace $workspace, ?Subscription $replacing, PlanPrice $price, string $paymentId, array $data): void
+    {
+        if ($replacing !== null) {
+            $this->endReplaced($replacing);
+        }
+
+        /*
+         * The payment id goes on at creation. It is unique, so two deliveries
+         * of the same purchase race into one row - the loser fails, is
+         * retried, and finds the row above.
+         */
+        $lifetime = Subscription::withoutWorkspaceScope()->create([
+            'workspace_id' => $workspace->id,
+            'plan_id' => $price->plan_id,
+            'plan_price_id' => $price->id,
+            'status' => SubscriptionStatus::Active,
+            'billing_source' => BillingSource::DodoOneTime,
+            'dodo_payment_id' => $paymentId,
+            'current_period_start' => now(),
+            'provider_event_at' => $event->occurred_at,
+        ]);
+
+        $this->recordInvoice($lifetime, $workspace, $data);
+        $this->adoptCustomerId($workspace, $data);
+
+        $workspace->update(['grace_ends_at' => null]);
+        $this->settle($workspace, BillingStatus::Active);
+
+        ProductEvents::record('subscription_activated', null, $workspace, ['plan' => $price->plan?->code]);
+
+        // After commit: if this transaction rolls back, Dodo must keep
+        // charging for the plan they still have.
+        if ($replacing?->isHeldWithProvider()) {
+            CancelReplacedSubscription::dispatch($replacing->id)->afterCommit();
+        }
+
+        $this->processed($event, $workspace);
+    }
+
+    /**
+     * The difference between two lifetime tiers, paid. Refused - and kept for
+     * a person to look at - unless it is still the step the customer was
+     * quoted, in full, in the price's own currency. The amount is ours to
+     * check because we set it: Dodo prorated nothing.
+     */
+    private function applyLifetimeUpgrade(WebhookEvent $event, Workspace $workspace, ?Subscription $live, PlanPrice $to, int $fromPriceId, array $data): void
+    {
+        $paymentId = $data['payment_id'];
+
+        // Already applied on an earlier delivery.
+        if ($live !== null && (int) $live->plan_price_id === (int) $to->id
+            && InvoiceSummary::withoutWorkspaceScope()
+                ->where('dodo_invoice_id', $paymentId)
+                ->where('subscription_id', $live->id)
+                ->exists()) {
+            $this->processed($event, $workspace);
+
+            return;
+        }
+
+        // The money moved whatever happens next, so the record of it is kept.
+        $this->recordInvoice($live, $workspace, $data);
+
+        if ($live === null || ! $live->isLifetime() || (int) $live->plan_price_id !== $fromPriceId) {
+            $this->refuse($event, 'Lifetime upgrade no longer matches the plan this workspace is on; refund it or apply it by hand.', $workspace);
+
+            return;
+        }
+
+        $currency = $data['currency'] ?? null;
+
+        if ($currency !== $to->currency) {
+            $this->refuse($event, "Lifetime upgrade currency mismatch: paid in {$currency}, priced in {$to->currency}; check the amount by hand.", $workspace);
+
+            return;
+        }
+
+        $expected = $to->amount_minor - $live->planPrice->amount_minor;
+        $paid = (int) ($data['total_amount'] ?? 0);
+
+        if ($paid < $expected) {
+            $this->refuse($event, "Lifetime upgrade underpaid: expected at least {$expected} {$to->currency}, received {$paid}.", $workspace);
+
+            return;
+        }
+
+        $fromPlan = $live->plan->name;
+
+        $live->update([
+            'plan_id' => $to->plan_id,
+            'plan_price_id' => $to->id,
+            'provider_event_at' => $event->occurred_at,
+        ]);
+
+        $this->settle($workspace, BillingStatus::Active);
+
+        $this->notifier->sendOnce(
+            $workspace,
+            'plan_changed',
+            "plan_changed:sub_{$live->id}:{$event->event_id}",
+            fn () => PlanChangedNotification::for($workspace, $fromPlan, $to, false),
+        );
+
+        $this->processed($event, $workspace);
+    }
+
+    /**
+     * A full refund or a lost dispute takes back what was paid for. A partial
+     * refund is a goodwill gesture and keeps the plan.
+     *
+     * Returns false when the payment is not a lifetime one, so the event is
+     * recorded the way it always was.
+     */
+    private function reconcileLifetimeReversal(WebhookEvent $event, array $data): bool
+    {
+        $paymentId = $data['payment_id'] ?? null;
+
+        if ($paymentId === null) {
+            return false;
+        }
+
+        $invoice = InvoiceSummary::withoutWorkspaceScope()->where('dodo_invoice_id', $paymentId)->first();
+        $purchase = Subscription::withoutWorkspaceScope()->where('dodo_payment_id', $paymentId)->first();
+
+        $owner = $purchase ?? ($invoice?->subscription_id === null
+            ? null
+            : Subscription::withoutWorkspaceScope()->find($invoice->subscription_id));
+
+        if ($owner === null || ! $owner->isLifetime()) {
+            return false;
+        }
+
+        $workspace = $owner->workspace()->withTrashed()->first();
+
+        if ($event->event_type === 'refund.succeeded' && ($data['is_partial'] ?? false) === true) {
+            $this->processed($event, $workspace, 'Partial refund: the plan is kept.');
+
+            return true;
+        }
+
+        $invoice?->update(['status' => $event->event_type === 'dispute.lost' ? 'disputed' : 'refunded']);
+
+        // An upgrade payment. Which plan to put them back on is a judgement,
+        // and once they have left lifetime there is nothing to move back.
+        if ($purchase === null) {
+            $owner->status->isLive()
+                ? $this->refuse($event, 'A lifetime upgrade payment was refunded; decide by hand whether to move the workspace back to its previous plan.', $workspace)
+                : $this->processed($event, $workspace);
+
+            return true;
+        }
+
+        // Already replaced by another plan: the refund takes back nothing they still have.
+        if ($purchase->status->isLive()) {
+            $purchase->update([
+                'status' => SubscriptionStatus::Canceled,
+                'canceled_at' => now(),
+                'ended_at' => now(),
+            ]);
+
+            $this->settle($workspace, BillingStatus::Unpaid);
+        }
+
+        $this->processed($event, $workspace);
+
+        return true;
+    }
+
+    private function processed(WebhookEvent $event, ?Workspace $workspace, ?string $note = null): void
+    {
+        $event->update([
+            'processed_at' => now(),
+            'workspace_id' => $workspace?->id,
+            'error' => $note,
+        ]);
+    }
+
+    /** Recorded, not processed: billing-ops lists it for a person to act on. */
+    private function refuse(WebhookEvent $event, string $why, ?Workspace $workspace = null): void
+    {
+        $event->update([
+            'failed_at' => now(),
+            'workspace_id' => $workspace?->id,
+            'error' => $why,
         ]);
     }
 

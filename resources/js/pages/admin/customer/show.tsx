@@ -474,7 +474,10 @@ export default function CustomerShow({
                                     value={
                                         subscription.billing_source === 'manual'
                                             ? 'Granted by hand'
-                                            : 'Payment provider'
+                                            : subscription.billing_source ===
+                                                'dodo_one_time'
+                                              ? 'Payment provider (lifetime, paid once)'
+                                              : 'Payment provider'
                                     }
                                 />
                                 {subscription.trial_ends_at && (

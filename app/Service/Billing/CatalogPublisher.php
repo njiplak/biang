@@ -4,6 +4,7 @@ namespace App\Service\Billing;
 
 use App\Contract\Billing\CatalogPublisherContract;
 use App\Contract\Billing\PaymentGatewayContract;
+use App\Enums\BillingInterval;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Models\AddonPrice;
 use App\Models\PlanPrice;
@@ -31,7 +32,7 @@ class CatalogPublisher implements CatalogPublisherContract
         // Already published. Doing it again would mint a second one at their
         // end and leave the first collecting subscriptions we no longer point
         // at - an invisible split of one plan's revenue across two products.
-        if (filled($this->providerId($price))) {
+        if ($price instanceof PlanPrice ? $price->isPublished() : filled($price->dodo_addon_id)) {
             return $price;
         }
 
@@ -54,25 +55,34 @@ class CatalogPublisher implements CatalogPublisherContract
             return $price->refresh();
         }
 
-        $price->update([
-            'dodo_product_id' => $this->gateway->publishProduct(
-                $this->name($price),
-                $price->currency,
-                $price->amount_minor,
-                $price->billing_interval,
-                $this->description($price),
-            ),
-        ]);
+        /*
+         * Each product is published only if it is missing, and saved the moment
+         * it exists. A lifetime price is two products, and when the second is
+         * refused the retry must not mint the first again.
+         */
+        if (blank($price->dodo_product_id)) {
+            $price->update([
+                'dodo_product_id' => $this->gateway->publishProduct(
+                    $this->name($price),
+                    $price->currency,
+                    $price->amount_minor,
+                    $price->billing_interval,
+                    $this->description($price),
+                ),
+            ]);
+        }
+
+        if ($price->isLifetime() && blank($price->dodo_upgrade_product_id)) {
+            $price->update([
+                'dodo_upgrade_product_id' => $this->gateway->publishLifetimeUpgrade(
+                    "{$price->plan->name} (Lifetime upgrade)",
+                    $price->currency,
+                    $this->description($price),
+                ),
+            ]);
+        }
 
         return $price->refresh();
-    }
-
-    /** Whichever provider id this kind of price is published under. */
-    private function providerId(PlanPrice|AddonPrice $price): ?string
-    {
-        return $price instanceof AddonPrice
-            ? $price->dodo_addon_id
-            : $price->dodo_product_id;
     }
 
     public function retire(PlanPrice|AddonPrice $price): void
@@ -83,10 +93,17 @@ class CatalogPublisher implements CatalogPublisherContract
          * to a subscription through a plan we control, so retiring the plan is
          * what actually takes it off sale.
          */
-        if ($price instanceof AddonPrice || blank($price->dodo_product_id)) {
+        if ($price instanceof AddonPrice) {
             return;
         }
 
+        foreach (array_filter([$price->dodo_product_id, $price->dodo_upgrade_product_id]) as $productId) {
+            $this->archive($price, $productId);
+        }
+    }
+
+    private function archive(PlanPrice $price, string $productId): void
+    {
         /*
          * Swallowed deliberately, and the only place in this class that does.
          * Retiring a plan is OUR decision (section 10) and it has already
@@ -95,11 +112,11 @@ class CatalogPublisher implements CatalogPublisherContract
          * our own routes refuse an archived price - and re-archiving is safe.
          */
         try {
-            $this->gateway->archiveProduct($price->dodo_product_id);
+            $this->gateway->archiveProduct($productId);
         } catch (ProductPublishFailed $e) {
             Log::warning('Could not archive the provider product for a retired price.', [
                 'price' => $price::class.':'.$price->id,
-                'dodo_product_id' => $price->dodo_product_id,
+                'dodo_product_id' => $productId,
                 'reason' => $e->getMessage(),
             ]);
         }
@@ -111,7 +128,11 @@ class CatalogPublisher implements CatalogPublisherContract
         return [
             'plan' => PlanPrice::query()
                 ->whereNull('archived_at')
-                ->whereNull('dodo_product_id')
+                ->where(fn ($query) => $query
+                    ->whereNull('dodo_product_id')
+                    ->orWhere(fn ($lifetime) => $lifetime
+                        ->where('billing_interval', BillingInterval::Lifetime)
+                        ->whereNull('dodo_upgrade_product_id')))
                 ->with('plan')
                 ->get(),
             'addon' => AddonPrice::query()
@@ -135,7 +156,11 @@ class CatalogPublisher implements CatalogPublisherContract
             return $price->addon->name;
         }
 
-        $interval = ucfirst($price->billing_interval->value).'ly';
+        $interval = match ($price->billing_interval) {
+            BillingInterval::Month => 'Monthly',
+            BillingInterval::Year => 'Yearly',
+            BillingInterval::Lifetime => 'Lifetime',
+        };
 
         return "{$price->plan->name} ({$interval})";
     }

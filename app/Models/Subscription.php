@@ -26,7 +26,7 @@ class Subscription extends Model
     protected $fillable = [
         'ulid', 'workspace_id', 'plan_id', 'plan_price_id', 'status',
         'scheduled_plan_price_id', 'scheduled_change_at',
-        'billing_source', 'dodo_subscription_id', 'trial_ends_at',
+        'billing_source', 'dodo_subscription_id', 'dodo_payment_id', 'trial_ends_at',
         'current_period_start', 'current_period_end', 'cancel_at_period_end',
         'canceled_at', 'cancellation_feedback', 'cancellation_comment',
         'ended_at', 'provider_event_at',
@@ -84,8 +84,21 @@ class Subscription extends Model
      */
     public function isMissingProviderRecord(): bool
     {
-        return $this->billing_source->requiresProviderId()
-            && $this->dodo_subscription_id === null;
+        return match ($this->billing_source) {
+            BillingSource::Dodo => $this->dodo_subscription_id === null,
+            BillingSource::DodoOneTime => $this->dodo_payment_id === null,
+            BillingSource::Manual => false,
+        };
+    }
+
+    /**
+     * Paid once, never renewed. Read from the price rather than the billing
+     * source, so a lifetime plan granted by hand follows the same rules as one
+     * that was bought.
+     */
+    public function isLifetime(): bool
+    {
+        return $this->planPrice?->isLifetime() === true;
     }
 
     public function plan(): BelongsTo

@@ -44,7 +44,8 @@ export type CustomerSubscription = {
     plan: string;
     plan_code: string;
     status: string;
-    billing_source: 'dodo' | 'manual';
+    // 'dodo_one_time' is a lifetime plan: one payment, no subscription.
+    billing_source: 'dodo' | 'manual' | 'dodo_one_time';
     // `dodo` with no provider id is a broken sync, not a comp.
     is_missing_provider_record: boolean;
     trial_ends_at: string | null;
@@ -167,6 +168,8 @@ export type RevenueSummary = {
     at_risk_minor: number;
     at_risk_count: number;
     comped_count: number;
+    /** Paid once, so counted here rather than in MRR. */
+    lifetime_count: number;
     signups: {
         users_this_week: number;
         workspaces_this_week: number;

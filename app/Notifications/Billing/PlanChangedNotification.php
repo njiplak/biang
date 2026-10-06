@@ -2,6 +2,7 @@
 
 namespace App\Notifications\Billing;
 
+use App\Enums\BillingInterval;
 use App\Models\PlanPrice;
 use App\Models\Workspace;
 use App\Notifications\Billing\Concerns\MentionsSupport;
@@ -54,7 +55,11 @@ class PlanChangedNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $price = $this->currency.' '.number_format($this->amountMinor / 100, 2);
+        $amount = $this->currency.' '.number_format($this->amountMinor / 100, 2);
+        // A lifetime price is paid once; "per lifetime" reads as nonsense.
+        $price = $this->interval === BillingInterval::Lifetime->value
+            ? "{$amount} one-time"
+            : "{$amount} per {$this->interval}";
 
         if ($this->effectiveAt !== null) {
             $date = $this->effectiveAt->toFormattedDayDateString();
@@ -62,7 +67,7 @@ class PlanChangedNotification extends Notification implements ShouldQueue
             return $this->withSupportLine((new MailMessage)
                 ->subject("{$this->workspace->name} moves to {$this->toPlan} on {$date}")
                 ->greeting('Your plan change is scheduled')
-                ->line("{$this->workspace->name} stays on {$this->fromPlan} until {$date}, the end of the period you have already paid for. It then moves to {$this->toPlan} ({$price} per {$this->interval}, before tax).")
+                ->line("{$this->workspace->name} stays on {$this->fromPlan} until {$date}, the end of the period you have already paid for. It then moves to {$this->toPlan} ({$price}, before tax).")
                 ->line('Nothing is charged now. You can keep your current plan instead at any time before then.')
                 ->action('View billing', url('/billing')));
         }
@@ -70,7 +75,7 @@ class PlanChangedNotification extends Notification implements ShouldQueue
         $message = (new MailMessage)
             ->subject("{$this->workspace->name} is now on {$this->toPlan}")
             ->greeting('Your plan has changed')
-            ->line("{$this->workspace->name} has moved from {$this->fromPlan} to {$this->toPlan} ({$price} per {$this->interval}, before tax).");
+            ->line("{$this->workspace->name} has moved from {$this->fromPlan} to {$this->toPlan} ({$price}, before tax).");
 
         if ($this->prorated) {
             // Section 8: Dodo does the proration, so we describe it rather than quote it.

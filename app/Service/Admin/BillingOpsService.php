@@ -179,8 +179,14 @@ class BillingOpsService implements BillingOpsContract
     {
         return Subscription::withoutWorkspaceScope()
             ->live()
-            ->where('billing_source', BillingSource::Dodo)
-            ->whereNull('dodo_subscription_id')
+            // A lifetime purchase's provider record is its payment, not a subscription.
+            ->where(fn (Builder $query) => $query
+                ->where(fn (Builder $q) => $q
+                    ->where('billing_source', BillingSource::Dodo)
+                    ->whereNull('dodo_subscription_id'))
+                ->orWhere(fn (Builder $q) => $q
+                    ->where('billing_source', BillingSource::DodoOneTime)
+                    ->whereNull('dodo_payment_id')))
             ->with(['workspace', 'plan'])
             ->when($search, fn (Builder $query, string $term) => $query
                 ->whereHas('workspace', fn (Builder $q) => $q->where('name', 'like', "%{$term}%")))

@@ -186,6 +186,11 @@ class MemberController extends Controller
     /** @return array<string, mixed>|null */
     private function seatOffer(Workspace $workspace): ?array
     {
+        // Add-ons are not sold on a lifetime plan; the answer there is a bigger plan.
+        if ($workspace->subscription()->with('planPrice')->first()?->isLifetime()) {
+            return null;
+        }
+
         $price = $this->invitations->seatAddonPrice($workspace);
 
         if ($price === null) {

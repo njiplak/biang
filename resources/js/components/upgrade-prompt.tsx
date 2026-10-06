@@ -7,7 +7,11 @@ import type { SharedData } from '@/types';
  * way out. Billing roles get the link; anyone else is told who can act, since
  * /billing would refuse them.
  */
-export default function UpgradePrompt({ children }: { children: React.ReactNode }) {
+export default function UpgradePrompt({
+    children,
+}: {
+    children: React.ReactNode;
+}) {
     const current = usePage<SharedData>().props.tenancy?.current ?? null;
 
     return (
@@ -16,7 +20,10 @@ export default function UpgradePrompt({ children }: { children: React.ReactNode 
             <span>
                 {children}{' '}
                 {current?.can_manage_billing ? (
-                    <Link href="/billing" className="underline underline-offset-4">
+                    <Link
+                        href="/billing"
+                        className="underline underline-offset-4"
+                    >
                         See plans
                     </Link>
                 ) : (

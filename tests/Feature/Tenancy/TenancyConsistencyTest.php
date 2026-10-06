@@ -17,6 +17,7 @@ $scoped = [
     App\Models\UsageCounter::class,
     App\Models\UsageRecord::class,
     App\Models\InvoiceSummary::class,
+    App\Models\Project::class,
 ];
 
 // Deliberately NOT scoped, each for a stated reason.
@@ -29,6 +30,8 @@ $exempt = [
     'impersonation_sessions' => App\Models\ImpersonationSession::class,
     'webhook_events' => App\Models\WebhookEvent::class,
     'notification_logs' => App\Models\NotificationLog::class,
+    // funnel analytics - nullable workspace_id, counted centrally by staff
+    'product_events' => App\Models\ProductEvent::class,
 ];
 
 it('scopes tenant-owned models', function (string $model) {

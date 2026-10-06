@@ -264,7 +264,9 @@ function NextStep({
                 ) : (
                     <Icon className="size-4" />
                 )}
-                <span className={done ? 'text-muted-foreground line-through' : ''}>
+                <span
+                    className={done ? 'text-muted-foreground line-through' : ''}
+                >
                     {label}
                 </span>
             </Link>

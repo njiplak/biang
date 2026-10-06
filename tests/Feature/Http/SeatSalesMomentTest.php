@@ -117,7 +117,8 @@ it('offers no seat add-on to an unpaid workspace', function () {
 it('charges nothing when the address already has a live invitation', function () {
     $gateway = fakeGateway();
 
-    PlanPrice::query()->update(['dodo_product_id' => 'prod_x']);
+    // One id per row: the column is unique, because one price is one product.
+    PlanPrice::all()->each(fn (PlanPrice $price) => $price->update(['dodo_product_id' => 'prod_'.$price->id]));
     App\Models\Subscription::withoutWorkspaceScope()
         ->where('workspace_id', $this->workspace->id)
         ->update(['dodo_subscription_id' => 'sub_dodo_1']);

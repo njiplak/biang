@@ -292,7 +292,9 @@ function CurrentPlan({
                                     subscription.scheduled_change.currency,
                                 )}
                                 /{subscription.scheduled_change.interval}) on{' '}
-                                {date(subscription.scheduled_change.effective_at)}
+                                {date(
+                                    subscription.scheduled_change.effective_at,
+                                )}
                                 . Nothing is charged until then.
                             </span>
                             <Button

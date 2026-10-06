@@ -25,6 +25,11 @@ beforeEach(function () {
     WorkspaceMember::factory()->for($this->workspace)->for($this->member)->create();
 
     $this->service->closeWorkspace($this->workspace);
+
+    // Closing clears current_workspace_id with a query, so this copy still holds
+    // the old id and restore's update of it would be skipped as unchanged. A
+    // real request loads the owner fresh.
+    $this->owner->refresh();
 });
 
 it('lists a closed workspace on the owner dashboard', function () {

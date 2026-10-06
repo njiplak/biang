@@ -24,7 +24,8 @@ const COPY: Record<Props['status'], { title: string; description: string }> = {
     },
     503: {
         title: 'We are down for maintenance',
-        description: 'We will be back shortly. Please try again in a few minutes.',
+        description:
+            'We will be back shortly. Please try again in a few minutes.',
     },
 };
 
@@ -67,7 +68,10 @@ export default function ErrorPage({ status }: Props) {
             {supportUrl && (
                 <p className="text-sm text-muted-foreground">
                     Still stuck?{' '}
-                    <a href={supportUrl} className="underline underline-offset-4">
+                    <a
+                        href={supportUrl}
+                        className="underline underline-offset-4"
+                    >
                         Contact support
                     </a>
                 </p>

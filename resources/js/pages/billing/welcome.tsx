@@ -1,5 +1,10 @@
 import { Head, Link } from '@inertiajs/react';
-import { FolderKanban, LayoutDashboard, PartyPopper, Users } from 'lucide-react';
+import {
+    FolderKanban,
+    LayoutDashboard,
+    PartyPopper,
+    Users,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 

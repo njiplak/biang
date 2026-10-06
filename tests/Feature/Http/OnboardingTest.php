@@ -46,7 +46,8 @@ it('uses the name given at signup', function () {
 // Path A: the plan picked on the marketing site goes straight to the card form.
 it('opens the card form for a plan carried through signup', function () {
     $gateway = fakeGateway();
-    PlanPrice::query()->update(['dodo_product_id' => 'prod_x']);
+    // One id per row: the column is unique, because one price is one product.
+    PlanPrice::all()->each(fn (PlanPrice $price) => $price->update(['dodo_product_id' => 'prod_'.$price->id]));
 
     $this->actingAs($this->user)
         ->withSession([RegisterController::PENDING_PLAN => 'pro'])

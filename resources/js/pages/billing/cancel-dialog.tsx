@@ -99,8 +99,9 @@ export function CancelDialog({ paidThrough }: { paidThrough: string | null }) {
                                             readable, and is never deleted.
                                         </span>
                                         <span>
-                                            Changed your mind before then? Resume
-                                            from this page and nothing changes.
+                                            Changed your mind before then?
+                                            Resume from this page and nothing
+                                            changes.
                                         </span>
                                     </>
                                 ) : (

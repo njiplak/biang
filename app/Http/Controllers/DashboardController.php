@@ -28,6 +28,9 @@ class DashboardController extends Controller
 {
     public function index(Request $request): Response|RedirectResponse
     {
+        // The web guard by name throughout, as in ResolveWorkspace: while staff
+        // impersonate both guards are signed in, and this page must not depend
+        // on which one is the default - an AdminUser has no workspaces.
         $closed = $this->closedWorkspaces($request);
 
         /*
@@ -36,7 +39,7 @@ class DashboardController extends Controller
          * and not straight after onboarding failed, or the two would bounce
          * the request between them.
          */
-        if ($request->user()->workspaces()->doesntExist()
+        if ($request->user('web')->workspaces()->doesntExist()
             && $closed === []
             && ! $request->session()->get(OnboardingController::FAILED)) {
             return redirect()->route('onboarding');
@@ -90,7 +93,7 @@ class DashboardController extends Controller
      */
     private function closedWorkspaces(Request $request): array
     {
-        $owned = $request->user()->memberships()
+        $owned = $request->user('web')->memberships()
             ->where('role', WorkspaceRole::Owner)
             ->pluck('workspace_id');
 
@@ -173,7 +176,7 @@ class DashboardController extends Controller
              * does not: the prompt then offers the plan without promising free
              * days that the card form is not going to give.
              */
-            'trial_days' => $request->user()->hasConsumedTrial() || $price === null
+            'trial_days' => $request->user('web')->hasConsumedTrial() || $price === null
                 ? null
                 : SubscriptionService::trialDaysFor($price),
         ];

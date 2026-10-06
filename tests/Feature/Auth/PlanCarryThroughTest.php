@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\BillingStatus;
+use App\Exceptions\Domain\TrialCheckoutInFlight;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Models\Plan;
 use App\Models\PlanPrice;
@@ -296,6 +297,50 @@ it('still creates the workspace when the trial is refused', function () {
         // Refused before the card form, not after.
         ->and($gateway->checkouts)->toBeEmpty();
 });
+
+/*
+ * The same rule one step earlier. A trial is only recorded as consumed when
+ * Dodo's webhook lands, so a trial checkout already open on another workspace
+ * holds this person's one trial until it lands or lapses.
+ */
+it('refuses a trial while one is starting on another workspace', function () {
+    $gateway = fakeGateway();
+    $user = User::factory()->create([
+        'trial_checkout_at' => now(),
+        'trial_checkout_workspace_id' => Workspace::factory()->create()->id,
+    ]);
+
+    $this->actingAs($user)
+        ->withSession([RegisterController::PENDING_PLAN => 'pro'])
+        ->post(route('workspace.store'), ['name' => 'Second Co'])
+        ->assertRedirect()
+        ->assertSessionHas('warning', (new TrialCheckoutInFlight($user))->userMessage());
+
+    expect(Workspace::where('name', 'Second Co')->exists())->toBeTrue()
+        ->and($gateway->checkouts)->toBeEmpty();
+});
+
+// The claim the guard above reads has to be staked on this path too, and only
+// when the card form actually carries a trial.
+it('stakes the trial claim only for a card form that carries a trial', function (string $interval, bool $staked) {
+    fakeGateway();
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->withSession([
+            RegisterController::PENDING_PLAN => 'pro',
+            RegisterController::PENDING_INTERVAL => $interval,
+        ])
+        ->post(route('workspace.store'), ['name' => 'Acme Inc'])
+        ->assertRedirect('https://checkout.dodopayments.test/session/abc');
+
+    $workspace = Workspace::where('name', 'Acme Inc')->firstOrFail();
+
+    expect($user->fresh()->trial_checkout_workspace_id)->toBe($staked ? $workspace->id : null);
+})->with([
+    'monthly carries a trial' => ['month', true],
+    'annual is bought outright' => ['year', false],
+]);
 
 /*
  * Section 14 phase 3 keeps the product sellable by hand with no provider wired

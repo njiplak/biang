@@ -88,9 +88,10 @@ it('publishes the limits so the table needs no retyping', function () {
         // Starter's seats, straight off plan_features - unit included, so the
         // marketing site can write "5 seats" without knowing the noun.
         ->assertJsonFragment(['key' => 'seats', 'name' => 'Seats', 'unit' => 'seat', 'value' => 5])
-        // Plans carry only limits something actually meters, so `projects` is
+        ->assertJsonFragment(['key' => 'projects', 'name' => 'Projects', 'unit' => 'project', 'value' => 10])
+        // Plans carry only limits something actually meters, so `api_calls` is
         // deliberately absent rather than published as a limit nobody enforces.
-        ->assertJsonMissing(['key' => 'projects']);
+        ->assertJsonMissing(['key' => 'api_calls']);
 });
 
 /*

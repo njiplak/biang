@@ -114,6 +114,27 @@ class Page extends Model
         ];
     }
 
+    /**
+     * The published legal pages as one string that changes whenever either
+     * page is edited, so a user row can say exactly which wording they
+     * accepted. Null when neither page is published - there is nothing to
+     * accept yet.
+     */
+    public static function legalVersion(): ?string
+    {
+        $pages = static::query()->published()
+            ->whereIn('slug', [self::TERMS_SLUG, self::PRIVACY_SLUG])
+            ->orderBy('slug')
+            ->get(['slug', 'updated_at']);
+
+        if ($pages->isEmpty()) {
+            return null;
+        }
+
+        return $pages->map(fn (self $page) => $page->slug.'@'.$page->updated_at?->toIso8601String())
+            ->implode(';');
+    }
+
     public function author(): BelongsTo
     {
         return $this->belongsTo(AdminUser::class, 'created_by_admin_id');

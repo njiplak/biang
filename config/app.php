@@ -55,6 +55,13 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
+    | Where a signed-out visitor to `/` is sent. The marketing site is a
+    | separate project; left empty, `/` goes to the login page instead.
+    */
+
+    'marketing_url' => env('MARKETING_URL'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------

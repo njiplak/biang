@@ -31,11 +31,12 @@ export default function WorkspaceBanner({
         return (
             <Banner tone="warn" icon={<Lock className="size-4 shrink-0" />}>
                 This workspace is read-only because there is no active
-                subscription. Everything here is kept and stays readable —
-                choose a plan to start making changes again.{' '}
-                <Link href="/billing" className="underline underline-offset-4">
-                    Choose a plan
-                </Link>
+                subscription. Everything here is kept and stays readable.{' '}
+                <BillingAction
+                    workspace={workspace}
+                    label="Choose a plan"
+                    ask="choose a plan"
+                />
             </Banner>
         );
     }
@@ -47,17 +48,20 @@ export default function WorkspaceBanner({
         return (
             <Banner tone="warn" icon={<Lock className="size-4 shrink-0" />}>
                 This workspace is over its limit on <strong>{features}</strong>.
-                Reading and exporting still work; writing resumes as soon as you
-                upgrade or free up space.{' '}
-                <Link href="/billing" className="underline underline-offset-4">
-                    See plans
-                </Link>
+                Reading and exporting still work; writing resumes as soon as the
+                plan is upgraded or space is freed up.{' '}
+                <BillingAction
+                    workspace={workspace}
+                    label="See plans"
+                    ask="upgrade the plan"
+                />
             </Banner>
         );
     }
 
-    // Section 9: past due deliberately keeps full access.
-    if (workspace.state === 'past_due') {
+    // Section 9: past due deliberately keeps full access, and only the people
+    // who handle billing hear about the company's card problems.
+    if (workspace.state === 'past_due' && workspace.can_manage_billing) {
         return (
             <Banner
                 tone="warn"
@@ -94,8 +98,41 @@ export default function WorkspaceBanner({
         );
     }
 
+    /*
+     * A cancellation scheduled for the period end. Everyone sees it, because
+     * everyone loses the ability to make changes on that date; only billing
+     * roles are offered the way to undo it.
+     */
+    const endsAt = workspace.current_period_end ?? workspace.trial_ends_at;
+
+    if (
+        workspace.cancel_at_period_end &&
+        endsAt &&
+        (workspace.state === 'active' || workspace.state === 'trialing')
+    ) {
+        return (
+            <Banner tone="info" icon={<Clock className="size-4 shrink-0" />}>
+                The subscription for this workspace ends on{' '}
+                {new Date(endsAt).toLocaleDateString()}. After that it becomes
+                read-only — nothing is deleted.{' '}
+                {workspace.can_manage_billing && (
+                    <Link
+                        href="/billing"
+                        className="underline underline-offset-4"
+                    >
+                        Resume subscription
+                    </Link>
+                )}
+            </Banner>
+        );
+    }
+
     // Section 4: the trial auto-charges, so the date is never a surprise.
-    if (workspace.state === 'trialing' && workspace.trial_days_left !== null) {
+    if (
+        workspace.state === 'trialing' &&
+        workspace.trial_days_left !== null &&
+        workspace.can_manage_billing
+    ) {
         const days = workspace.trial_days_left;
 
         return (
@@ -110,6 +147,38 @@ export default function WorkspaceBanner({
     }
 
     return null;
+}
+
+/**
+ * The way forward from a billing problem. Billing roles get the link; anyone
+ * else would get a 403 from it, so they are told who can fix it instead.
+ */
+function BillingAction({
+    workspace,
+    label,
+    ask,
+}: {
+    workspace: CurrentWorkspace;
+    label: string;
+    ask: string;
+}) {
+    if (workspace.can_manage_billing) {
+        return (
+            <Link href="/billing" className="underline underline-offset-4">
+                {label}
+            </Link>
+        );
+    }
+
+    const who = workspace.owner_name
+        ? `${workspace.owner_name} (the workspace owner)`
+        : 'a workspace owner';
+
+    return (
+        <>
+            Ask {who} to {ask}.
+        </>
+    );
 }
 
 function Banner({

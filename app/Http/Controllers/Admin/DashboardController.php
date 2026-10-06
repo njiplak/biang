@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Contract\Admin\RevenueContract;
 use App\Http\Controllers\Controller;
+use App\Models\ProductEvent;
+use App\Support\ProductEvents;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,6 +31,30 @@ class DashboardController extends Controller
             'revenue' => $admin->hasAnyPermission('revenue.view')
                 ? $this->revenue->summary()
                 : null,
+            // Section 15: where people drop out between signing up and paying.
+            'funnel' => $admin->hasAnyPermission('revenue.view')
+                ? $this->funnel()
+                : null,
         ]);
+    }
+
+    /**
+     * Each funnel step's count over the last 30 days, in funnel order.
+     *
+     * @return list<array{step: string, count: int}>
+     */
+    private function funnel(): array
+    {
+        $counts = ProductEvent::query()
+            ->whereIn('name', ProductEvents::FUNNEL)
+            ->where('occurred_at', '>=', now()->subDays(30))
+            ->groupBy('name')
+            ->selectRaw('name, count(*) as total')
+            ->pluck('total', 'name');
+
+        return array_map(
+            fn (string $step) => ['step' => $step, 'count' => (int) ($counts[$step] ?? 0)],
+            ProductEvents::FUNNEL,
+        );
     }
 }

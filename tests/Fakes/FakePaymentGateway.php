@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\ResumeFailed;
 use App\Exceptions\Domain\TrialExtensionFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
@@ -63,6 +64,12 @@ class FakePaymentGateway implements PaymentGatewayContract
 
     /** @var list<array<string, mixed>> */
     public array $cancellations = [];
+
+    /** @var list<string> provider subscription ids, in call order */
+    public array $resumptions = [];
+
+    /** @var list<string> provider subscription ids whose scheduled change was dropped */
+    public array $scheduledChangeCancellations = [];
 
     /** Every trial extension carried to the provider, in order. */
     public array $trialExtensions = [];
@@ -185,6 +192,8 @@ class FakePaymentGateway implements PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $atNextBillingDate = false,
+        bool $replaceScheduled = false,
     ): void {
         if ($this->broken) {
             throw new PlanChangeUnavailable('the payment provider did not respond');
@@ -208,7 +217,22 @@ class FakePaymentGateway implements PaymentGatewayContract
             'subscription' => $subscription->dodo_subscription_id,
             'product_id' => $price->dodo_product_id,
             'addons' => $addons,
+            'at_next_billing_date' => $atNextBillingDate,
+            'replace_scheduled' => $replaceScheduled,
         ];
+    }
+
+    public function cancelScheduledPlanChange(Subscription $subscription): void
+    {
+        if ($this->broken) {
+            throw new PlanChangeUnavailable('the payment provider did not respond');
+        }
+
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
+        }
+
+        $this->scheduledChangeCancellations[] = $subscription->dodo_subscription_id;
     }
 
     public function cancelSubscription(
@@ -231,6 +255,19 @@ class FakePaymentGateway implements PaymentGatewayContract
             'feedback' => $feedback?->value,
             'comment' => $comment,
         ];
+    }
+
+    public function resumeSubscription(Subscription $subscription): void
+    {
+        if ($this->broken) {
+            throw new ResumeFailed('the payment provider did not respond');
+        }
+
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new ResumeFailed('this subscription is not held with the payment provider');
+        }
+
+        $this->resumptions[] = $subscription->dodo_subscription_id;
     }
 
     public function extendTrial(Subscription $subscription, \DateTimeInterface $trialEndsAt): void
@@ -256,6 +293,7 @@ class FakePaymentGateway implements PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $replaceScheduled = false,
     ): array {
         if ($this->broken) {
             throw new PlanChangeUnavailable('the payment provider could not price this change');

@@ -25,9 +25,16 @@ type Props = {
         close: boolean;
     };
     members: Member[];
+    // how long a closed workspace stays restorable
+    retention_days: number;
 };
 
-export default function WorkspaceSettings({ workspace, can, members }: Props) {
+export default function WorkspaceSettings({
+    workspace,
+    can,
+    members,
+    retention_days,
+}: Props) {
     const page = usePage<SharedData>();
     const rename = useForm({ name: workspace.name });
     const [successor, setSuccessor] = useState<string>('');
@@ -171,9 +178,13 @@ export default function WorkspaceSettings({ workspace, can, members }: Props) {
                             Close this workspace
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                            Billing stops and nobody can open it. Nothing is
-                            deleted straight away — it stays recoverable for the
-                            retention window, then is anonymised.
+                            Nobody can open it, and its subscription ends
+                            straight away — any time left in the current billing
+                            period is not carried over. Nothing is deleted: you
+                            can restore it from your dashboard for{' '}
+                            {retention_days} days, after which it is anonymised.
+                            A restored workspace comes back read-only until a
+                            plan is chosen again.
                         </p>
                         <div className="flex flex-col gap-2">
                             <Label

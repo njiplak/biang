@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () {
     Route::get('/', [BillingController::class, 'index'])->name('index');
 
+    // Where the customer lands once the card form has settled.
+    Route::get('welcome', [BillingController::class, 'welcome'])->name('welcome');
+
     /*
      * `verified` from here down. Section 5 Path B is explicit that verification
      * comes before the card, and section 12 sells one trial per PERSON, ever -
@@ -47,7 +50,14 @@ Route::middleware('auth')->prefix('billing')->as('billing.')->group(function () 
      */
     Route::get('plan/preview', [BillingController::class, 'previewPlan'])
         ->middleware('verified')->name('plan.preview');
+
+    // Drop a downgrade scheduled for the renewal. Charges nothing, so not
+    // behind `verified` - backing out of a change is never blocked.
+    Route::delete('plan/scheduled', [BillingController::class, 'keepCurrentPlan'])->name('plan.keep');
     Route::delete('/', [BillingController::class, 'cancel'])->name('cancel');
+
+    // Verified like every other action that keeps charging a card.
+    Route::post('resume', [BillingController::class, 'resume'])->middleware('verified')->name('resume');
 
     // Section 4's three add-on kinds. Entitlements move now; money follows in
     // phase 4, when Dodo becomes the merchant of record for the charge.

@@ -147,23 +147,23 @@ it('honours a staff override raised above the plan', function () {
 it('only claims to measure what something actually writes', function () {
     $seeded = Feature::query()->pluck('key');
 
-    // Seeded, limited on every plan, and metered by nothing.
+    // Seeded and metered by nothing.
     expect($seeded)->toContain('projects', 'api_calls')
-        ->and(Features::isMeasured('projects'))->toBeFalse()
         ->and(Features::isMeasured('api_calls'))->toBeFalse()
-        // Seats is the one real metric today: MembershipService writes it.
-        ->and(Features::isMeasured(Features::SEATS))->toBeTrue();
+        // Seats (MembershipService) and projects (ProjectService) are written.
+        ->and(Features::isMeasured(Features::SEATS))->toBeTrue()
+        ->and(Features::isMeasured(Features::PROJECTS))->toBeTrue();
 });
 
 it('confirms an unmeasured limit can never fire', function () {
     // A limit on a key nothing increments, which is exactly why PlanSeeder no
     // longer ships one: usage stays at zero, so the limit reads as enforced
     // while being decorative.
-    limitPlanTo('projects', 3);
+    limitPlanTo('api_calls', 3);
 
     $this->usage->evaluate($this->workspace);
 
-    expect($this->usage->current($this->workspace, 'projects'))->toBe(0)
+    expect($this->usage->current($this->workspace, 'api_calls'))->toBe(0)
         ->and($this->workspace->fresh()->isOverLimit())->toBeFalse();
 });
 

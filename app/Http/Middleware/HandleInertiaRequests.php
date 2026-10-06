@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ImpersonationController;
 use App\Models\ImpersonationSession;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceEntitlement;
 use App\Models\WorkspaceMember;
 use App\Support\CurrentWorkspace;
 use App\Support\SiteSettings;
@@ -144,7 +145,9 @@ class HandleInertiaRequests extends Middleware
         $current = app(CurrentWorkspace::class)->get();
 
         return [
-            'current' => $current === null ? null : $this->currentPayload($current),
+            'current' => $current === null ? null : $this->currentPayload($current, $user),
+            // One workspace per customer for now; hides "New workspace" once they have one.
+            'can_create_workspace' => $user->canCreateWorkspace(),
             // Reads across every workspace: the switcher is the reason
             // workspace_members is deliberately never tenant-scoped.
             'available' => $user->memberships()->with('workspace')->get()
@@ -162,7 +165,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /** @return array<string, mixed> */
-    private function currentPayload(Workspace $workspace): array
+    private function currentPayload(Workspace $workspace, User $user): array
     {
         $state = $workspace->displayState();
         $subscription = $workspace->subscription()->first();
@@ -180,6 +183,25 @@ class HandleInertiaRequests extends Middleware
             'over_limit_features' => $workspace->over_limit_features,
             'grace_ends_at' => $workspace->grace_ends_at,
             'trial_ends_at' => $subscription?->trial_ends_at,
+            // A scheduled cancellation: access continues until the period end.
+            'cancel_at_period_end' => (bool) $subscription?->cancel_at_period_end,
+            'current_period_end' => $subscription?->current_period_end,
+            /*
+             * The banners point billing roles at /billing and everyone else at
+             * the person who can fix it. A member sent to a page they cannot
+             * open gets a 403 and no idea who to ask.
+             */
+            'can_manage_billing' => $user->roleIn($workspace)?->canManageBilling() === true,
+            'owner_name' => $workspace->owners()->with('user:id,name')->first()?->user?->name,
+            /*
+             * What the plan grants, keyed by feature: an integer limit, or
+             * null for unlimited. A key that is absent is not included at all.
+             * Product screens read this (useEntitlement) to hide or upsell a
+             * feature before the server refuses it.
+             */
+            'entitlements' => WorkspaceEntitlement::withoutWorkspaceScope()
+                ->where('workspace_id', $workspace->id)
+                ->pluck('value', 'feature_key'),
             /*
              * Counted here rather than in the banner. The countdown needs "now",
              * and reading the clock while React renders is impure - the same

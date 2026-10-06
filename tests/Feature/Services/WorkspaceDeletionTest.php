@@ -90,6 +90,16 @@ it('restores a closed workspace as readable and read-only', function () {
         ->and($fresh->canWrite())->toBeFalse();
 });
 
+// Closing and reopening must not be a way out of a suspension.
+it('keeps a suspension through a close and restore', function () {
+    $this->service->suspend($this->workspace, AdminUser::factory()->create(), 'abuse');
+
+    $this->service->closeWorkspace($this->workspace->fresh());
+    $this->service->reopenWorkspace(Workspace::withTrashed()->find($this->workspace->id));
+
+    expect(Workspace::find($this->workspace->id)->access_status)->toBe(AccessStatus::Suspended);
+});
+
 // A closed workspace must drop out of the switcher immediately.
 it('disappears from the owner workspace list', function () {
     expect($this->owner->fresh()->workspaces()->count())->toBe(1);

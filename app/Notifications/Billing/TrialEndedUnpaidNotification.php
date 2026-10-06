@@ -3,6 +3,7 @@
 namespace App\Notifications\Billing;
 
 use App\Models\Workspace;
+use App\Notifications\Billing\Concerns\MentionsSupport;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -20,7 +21,7 @@ use Illuminate\Notifications\Notification;
  */
 class TrialEndedUnpaidNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use MentionsSupport, Queueable;
 
     public function __construct(
         private readonly Workspace $workspace,
@@ -35,12 +36,12 @@ class TrialEndedUnpaidNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
+        return $this->withSupportLine((new MailMessage)
             ->subject("Your {$this->plan} trial for {$this->workspace->name} has ended")
             ->greeting('Your trial has ended')
             ->line("The {$this->plan} trial for {$this->workspace->name} has run its course. There was no card on file, so nothing has been charged.")
             ->line('The workspace is now read-only. Everything you created is still there and still yours, and stays readable for as long as you like.')
             ->action('Choose a plan', url('/billing'))
-            ->line('Choosing a plan turns writing back on straight away. Nothing is deleted while you decide.');
+            ->line('Choosing a plan turns writing back on straight away. Nothing is deleted while you decide.'));
     }
 }

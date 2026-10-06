@@ -27,11 +27,22 @@ export type CurrentWorkspace = {
     trial_ends_at: string | null;
     // Counted server-side: reading the clock during render is impure.
     trial_days_left: number | null;
+    // The renewal is cancelled; access runs until current_period_end.
+    cancel_at_period_end: boolean;
+    current_period_end: string | null;
+    // Whether the viewer can open /billing. Everyone else is pointed at the owner.
+    can_manage_billing: boolean;
+    owner_name: string | null;
+    // What the plan grants: an integer limit, or null for unlimited. A feature
+    // missing from the map is not included in the plan. See useEntitlement.
+    entitlements: Record<string, number | null>;
 };
 
 export type WorkspaceContext = {
     current: CurrentWorkspace | null;
     available: WorkspaceSummary[];
+    // One workspace per customer for now.
+    can_create_workspace: boolean;
 };
 
 /** Section 10: set on every page while staff are inside a customer account. */

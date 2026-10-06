@@ -30,6 +30,19 @@ class WorkspacePolicy
         return $this->role($user, $workspace)?->canAdministerWorkspace() === true;
     }
 
+    /**
+     * Section 6: a closed workspace is recoverable until its purge date. Only
+     * an owner, the same person who could close it, and never once it has been
+     * anonymised - there is nothing left to give back.
+     */
+    public function restore(User $user, Workspace $workspace): bool
+    {
+        return $workspace->trashed()
+            && $workspace->anonymized_at === null
+            && $workspace->purge_after?->isFuture() === true
+            && $this->role($user, $workspace)?->canAdministerWorkspace() === true;
+    }
+
     public function transferOwnership(User $user, Workspace $workspace): bool
     {
         return $this->role($user, $workspace)?->canAdministerWorkspace() === true;

@@ -11,6 +11,7 @@ use App\Exceptions\Domain\PlanChangeUnavailable;
 use App\Exceptions\Domain\PortalUnavailable;
 use App\Exceptions\Domain\ProductPublishFailed;
 use App\Exceptions\Domain\ProviderLookupFailed;
+use App\Exceptions\Domain\ResumeFailed;
 use App\Exceptions\Domain\TrialExtensionFailed;
 use App\Exceptions\Domain\UsageReportFailed;
 use App\Models\PlanPrice;
@@ -22,6 +23,7 @@ use Dodopayments\Client;
 use Dodopayments\Misc\TaxCategory;
 use Dodopayments\Payments\PaymentListParams\Status as PaymentStatus;
 use Dodopayments\Products\Price\RecurringPrice;
+use Dodopayments\Subscriptions\SubscriptionChangePlanParams\EffectiveAt;
 use Dodopayments\Subscriptions\SubscriptionChangePlanParams\ProrationBillingMode;
 use Dodopayments\Subscriptions\SubscriptionPreviewChangePlanParams\ProrationBillingMode as PreviewProrationBillingMode;
 use Dodopayments\Subscriptions\SubscriptionStatus;
@@ -230,6 +232,8 @@ class DodoPaymentGateway implements PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $atNextBillingDate = false,
+        bool $replaceScheduled = false,
     ): void {
         if (blank($subscription->dodo_subscription_id)) {
             throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
@@ -253,9 +257,28 @@ class DodoPaymentGateway implements PaymentGatewayContract
                 // already pays for have to be restated or they are silently
                 // dropped along with the entitlements they grant.
                 addons: $addons === [] ? null : $addons,
+                cancelScheduledChangePlan: $replaceScheduled ? true : null,
+                effectiveAt: $atNextBillingDate ? EffectiveAt::NEXT_BILLING_DATE : null,
             );
         } catch (Throwable $e) {
             throw new PlanChangeUnavailable('the payment provider rejected the change', $e);
+        }
+    }
+
+    public function cancelScheduledPlanChange(Subscription $subscription): void
+    {
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new PlanChangeUnavailable('the payment provider is not configured');
+        }
+
+        try {
+            $this->client()->subscriptions->cancelChangePlan($subscription->dodo_subscription_id);
+        } catch (Throwable $e) {
+            throw new PlanChangeUnavailable('the payment provider did not respond', $e);
         }
     }
 
@@ -341,6 +364,28 @@ class DodoPaymentGateway implements PaymentGatewayContract
         }
     }
 
+    public function resumeSubscription(Subscription $subscription): void
+    {
+        if (blank($subscription->dodo_subscription_id)) {
+            throw new ResumeFailed('this subscription is not held with the payment provider');
+        }
+
+        if (blank(config('dodo.api_key'))) {
+            throw new ResumeFailed('the payment provider is not configured');
+        }
+
+        try {
+            // false, not null: the SDK drops nulls, and an omitted flag leaves
+            // the scheduled cancellation in place.
+            $this->client()->subscriptions->update(
+                subscriptionID: $subscription->dodo_subscription_id,
+                cancelAtNextBillingDate: false,
+            );
+        } catch (Throwable $e) {
+            throw new ResumeFailed('the payment provider did not respond', $e);
+        }
+    }
+
     /**
      * Section 10's trial extension, carried to the side that actually charges.
      *
@@ -377,6 +422,7 @@ class DodoPaymentGateway implements PaymentGatewayContract
         Subscription $subscription,
         PlanPrice $price,
         array $addons = [],
+        bool $replaceScheduled = false,
     ): array {
         if (blank($subscription->dodo_subscription_id)) {
             throw new PlanChangeUnavailable('this subscription is not held with the payment provider');
@@ -403,6 +449,9 @@ class DodoPaymentGateway implements PaymentGatewayContract
                 prorationBillingMode: PreviewProrationBillingMode::PRORATED_IMMEDIATELY,
                 quantity: 1,
                 addons: $addons === [] ? null : $addons,
+                // A scheduled downgrade makes Dodo refuse the preview unless
+                // it is told this change would replace it.
+                cancelScheduledChangePlan: $replaceScheduled ? true : null,
             );
         } catch (Throwable $e) {
             throw new PlanChangeUnavailable('the payment provider could not price this change', $e);
@@ -456,6 +505,13 @@ class DodoPaymentGateway implements PaymentGatewayContract
             'next_billing_date' => $this->iso($subscription->nextBillingDate),
             'cancel_at_next_billing_date' => $subscription->cancelAtNextBillingDate,
             'cancelled_at' => $this->iso($subscription->cancelledAt),
+            // What the reconciler reads to tell whether a scheduled downgrade
+            // has landed, or was dropped on their side.
+            'product_id' => $subscription->productID,
+            'scheduled_change' => $subscription->scheduledChange === null ? null : [
+                'product_id' => $subscription->scheduledChange->productID,
+                'effective_at' => $this->iso($subscription->scheduledChange->effectiveAt),
+            ],
         ];
     }
 

@@ -75,6 +75,8 @@ class PlanSeeder extends Seeder
                 'sort_order' => 20,
             ], [
                 Features::SEATS => 5,
+                // Provisional, like the seat counts: the example feature's limit.
+                Features::PROJECTS => 10,
             ]);
 
             $this->price($starter, BillingInterval::Month, 1900);
@@ -87,6 +89,7 @@ class PlanSeeder extends Seeder
                 'sort_order' => 30,
             ], [
                 Features::SEATS => 25,
+                Features::PROJECTS => null,
             ]);
 
             $this->price($pro, BillingInterval::Month, 4900);

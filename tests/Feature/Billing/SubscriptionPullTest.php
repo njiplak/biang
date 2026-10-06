@@ -87,9 +87,10 @@ it('settles a first purchase when the customer lands back from checkout', functi
     ($this->remote)();
     ($this->paid)();
 
+    // Welcomed in rather than left on the billing page (see BillingController::welcome).
     $this->actingAs($this->owner)
         ->get(route('billing.index', ['subscription_id' => 'sub_1', 'status' => 'active']))
-        ->assertRedirect(route('billing.index'));
+        ->assertRedirect(route('billing.welcome'));
 
     $subscription = $this->workspace->subscription()->withoutWorkspaceScope()->first();
 
@@ -110,7 +111,7 @@ it('drops the provider parameters so a reload does not ask again', function () {
 
     $this->actingAs($this->owner)
         ->get(route('billing.index', ['subscription_id' => 'sub_1', 'status' => 'active']))
-        ->assertRedirect(route('billing.index'));
+        ->assertRedirect(route('billing.welcome'));
 
     expect($this->gateway->lookups)->not->toBeEmpty();
 
@@ -121,9 +122,10 @@ it('drops the provider parameters so a reload does not ask again', function () {
     expect($this->gateway->lookups)->toBeEmpty();
 });
 
-// A plan carried from the marketing site has to survive being sent round again.
+// A plan carried from the marketing site has to survive being sent round again
+// while nothing has settled - it is what the page offers them to buy.
 it('keeps a carried plan across the redirect', function () {
-    ($this->remote)();
+    $this->gateway->broken();
 
     $this->actingAs($this->owner)
         ->get(route('billing.index', ['subscription_id' => 'sub_1', 'plan' => 'pro']))
@@ -499,4 +501,26 @@ it('ignores a subscription id that is not a string', function () {
         ->assertOk();
 
     expect($this->gateway->lookups)->toBeEmpty();
+});
+
+it('welcomes them with what they now have', function () {
+    ($this->remote)();
+    ($this->paid)();
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.index', ['subscription_id' => 'sub_1']));
+
+    $this->actingAs($this->owner)
+        ->get(route('billing.welcome'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('billing/welcome')
+            ->where('subscription.status', 'active'));
+});
+
+// Nothing to welcome them to: back to the billing page.
+it('sends the welcome page back to billing without a subscription', function () {
+    $this->actingAs($this->owner)
+        ->get(route('billing.welcome'))
+        ->assertRedirect(route('billing.index'));
 });

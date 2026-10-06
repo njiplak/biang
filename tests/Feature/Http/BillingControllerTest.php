@@ -42,7 +42,13 @@ it('shows the billing page to someone who may manage billing', function () {
             // alone - a decorative limit here would be a fiction on the page.
             ->has('usage', 1)
             ->where('usage.0.feature', 'seats')
-            ->has('plans'));
+            ->has('plans')
+            // What each plan includes, so an upgrade is chosen on what it gives.
+            ->where('plans.0.code', 'starter')
+            ->where('plans.0.features.0.key', 'seats')
+            ->where('plans.0.features.0.limit', 5)
+            ->where('plans.0.features.1.key', 'projects')
+            ->where('plans.0.features.1.limit', 10));
 });
 
 // Section 3: admins explicitly cannot see or touch billing.

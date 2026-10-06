@@ -8,6 +8,7 @@ use App\Contract\Workspace\InvitationContract;
 use App\Contract\Workspace\MembershipContract;
 use App\Enums\AddonKind;
 use App\Enums\WorkspaceRole;
+use App\Exceptions\Domain\AlreadyInvited;
 use App\Exceptions\Domain\InvitationNotAcceptable;
 use App\Exceptions\Domain\NoActiveSubscription;
 use App\Exceptions\Domain\SeatLimitReached;
@@ -29,25 +30,30 @@ class InvitationService implements InvitationContract
     ) {}
 
     /**
-     * Buy one seat, then invite - in a single transaction, so a seat is never
-     * paid for against an invitation that fails validation or the duplicate
-     * check a moment later.
+     * Buy one seat, then invite. Everything that could refuse the invitation is
+     * checked BEFORE the seat is bought, because the charge happens at Dodo and
+     * cannot be rolled back.
+     *
+     * Deliberately not one transaction: wrapping the purchase meant a refused
+     * invitation rolled back our record of the seat while Dodo kept the charge.
+     * Now a failure after the purchase leaves a seat that is paid for and
+     * recorded on both sides.
      */
     public function inviteWithAddedSeat(Workspace $workspace, string $email, WorkspaceRole $role, User $invitedBy): WorkspaceInvitation
     {
-        return DB::transaction(function () use ($workspace, $email, $role, $invitedBy) {
-            $price = $this->seatAddonPrice($workspace);
+        $price = $this->seatAddonPrice($workspace);
 
-            if ($price === null) {
-                // No payment account until they buy, so there is
-                // no seat to sell - the offer there is an upgrade.
-                throw new NoActiveSubscription($workspace);
-            }
+        if ($price === null) {
+            // No payment account until they buy, so there is
+            // no seat to sell - the offer there is an upgrade.
+            throw new NoActiveSubscription($workspace);
+        }
 
-            $this->subscriptions->purchaseAddon($workspace, $price, 1);
+        $this->assertNotAlreadyInvited($workspace, $email);
 
-            return $this->invite($workspace, $email, $role, $invitedBy);
-        });
+        $this->subscriptions->purchaseAddon($workspace, $price, 1);
+
+        return $this->invite($workspace, $email, $role, $invitedBy);
     }
 
     /**
@@ -79,6 +85,9 @@ class InvitationService implements InvitationContract
     public function invite(Workspace $workspace, string $email, WorkspaceRole $role, User $invitedBy): WorkspaceInvitation
     {
         return DB::transaction(function () use ($workspace, $email, $role, $invitedBy) {
+            // Before the insert, so a duplicate reads as a sentence rather than
+            // a unique-index violation.
+            $this->assertNotAlreadyInvited($workspace, $email);
             $this->assertSeatAvailable($workspace);
 
             [$plain, $hash] = $this->makeToken();
@@ -169,6 +178,23 @@ class InvitationService implements InvitationContract
 
             return $membership;
         });
+    }
+
+    /** Mirrors workspace_invitations_pending_unique: accepted and revoked rows do not count. */
+    private function assertNotAlreadyInvited(Workspace $workspace, string $email): void
+    {
+        $email = Str::lower($email);
+
+        $exists = WorkspaceInvitation::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('email', $email)
+            ->whereNull('accepted_at')
+            ->whereNull('revoked_at')
+            ->exists();
+
+        if ($exists) {
+            throw new AlreadyInvited($workspace, $email);
+        }
     }
 
     private function assertSeatAvailable(Workspace $workspace): void

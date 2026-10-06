@@ -54,6 +54,14 @@ export type CustomerSubscription = {
     interval: string;
     granted_by: string | null;
     grant_reason: string | null;
+    // Cancelled at the period end; access stops on ends_at unless resumed.
+    cancel_at_period_end: boolean;
+    ends_at: string | null;
+    cancellation_feedback: string | null;
+    cancellation_comment: string | null;
+    // A downgrade waiting for the renewal.
+    scheduled_plan: string | null;
+    scheduled_change_at: string | null;
 };
 
 export type CustomerMember = {

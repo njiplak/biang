@@ -3,6 +3,7 @@
 namespace App\Notifications\Billing;
 
 use App\Models\Workspace;
+use App\Notifications\Billing\Concerns\MentionsSupport;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -15,7 +16,7 @@ use Illuminate\Notifications\Notification;
  */
 class TrialEndingNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use MentionsSupport, Queueable;
 
     public function __construct(
         private readonly Workspace $workspace,
@@ -32,13 +33,13 @@ class TrialEndingNotification extends Notification implements ShouldQueue
     {
         $when = $this->daysLeft === 1 ? 'tomorrow' : "in {$this->daysLeft} days";
 
-        return (new MailMessage)
+        return $this->withSupportLine((new MailMessage)
             ->subject("Your {$this->workspace->name} trial ends {$when}")
             ->greeting('Your trial is nearly over')
             // Stated plainly and up front: this is the whole point of the email.
             ->line("The trial for {$this->workspace->name} ends {$when}, and the card on file will be charged automatically.")
             ->line('If you would rather not continue, cancel before then and you will not be charged. The workspace becomes read-only — nothing is deleted.')
             ->action('Review your plan', url('/billing'))
-            ->line('You will keep access to everything you have created either way.');
+            ->line('You will keep access to everything you have created either way.'));
     }
 }

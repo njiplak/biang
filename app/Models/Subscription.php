@@ -25,6 +25,7 @@ class Subscription extends Model
 
     protected $fillable = [
         'ulid', 'workspace_id', 'plan_id', 'plan_price_id', 'status',
+        'scheduled_plan_price_id', 'scheduled_change_at',
         'billing_source', 'dodo_subscription_id', 'trial_ends_at',
         'current_period_start', 'current_period_end', 'cancel_at_period_end',
         'canceled_at', 'cancellation_feedback', 'cancellation_comment',
@@ -40,6 +41,7 @@ class Subscription extends Model
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'datetime',
             'current_period_end' => 'datetime',
+            'scheduled_change_at' => 'datetime',
             'cancel_at_period_end' => 'boolean',
             'canceled_at' => 'datetime',
             'cancellation_feedback' => CancellationFeedback::class,
@@ -106,6 +108,12 @@ class Subscription extends Model
     public function isHeldWithProvider(): bool
     {
         return filled($this->dodo_subscription_id);
+    }
+
+    /** A downgrade waiting for the next renewal; null when nothing is scheduled. */
+    public function scheduledPlanPrice(): BelongsTo
+    {
+        return $this->belongsTo(PlanPrice::class, 'scheduled_plan_price_id');
     }
 
     public function items(): HasMany

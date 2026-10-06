@@ -3,6 +3,7 @@
 namespace App\Notifications\Billing;
 
 use App\Models\Workspace;
+use App\Notifications\Billing\Concerns\MentionsSupport;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -18,7 +19,7 @@ use Illuminate\Notifications\Notification;
  */
 class GracePeriodEndedNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use MentionsSupport, Queueable;
 
     public function __construct(private readonly Workspace $workspace) {}
 
@@ -30,11 +31,11 @@ class GracePeriodEndedNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
+        return $this->withSupportLine((new MailMessage)
             ->subject("{$this->workspace->name} is now read-only")
             ->greeting('We could not take payment')
             ->line("We tried several times to charge the card for {$this->workspace->name} and it did not go through, so the workspace is now read-only.")
             ->line('Nothing has been deleted. You can still read and export everything, and updating the card restores full access straight away.')
-            ->action('Update payment details', url('/billing'));
+            ->action('Update payment details', url('/billing')));
     }
 }

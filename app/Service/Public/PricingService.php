@@ -40,11 +40,11 @@ class PricingService implements PricingContract
              * a second copy here is how the pricing page came to advertise a
              * different trial than the checkout actually sold.
              *
-             * This is the headline figure. Whether a particular price is sold
-             * with a trial at all is answered per price below, because annual
-             * is not.
+             * This is the headline figure, null when trials are switched off.
+             * Whether a particular price is sold with a trial at all is
+             * answered per price below, because annual is not.
              */
-            'trial_days' => SubscriptionService::TRIAL_DAYS,
+            'trial_days' => SubscriptionService::trialLength(),
             'signup_url' => route('register'),
             'generated_at' => now()->toIso8601String(),
         ];

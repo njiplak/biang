@@ -40,5 +40,7 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Pinned so a local .env cannot change what the tests expect. -->
+        <env name="BILLING_TRIAL_DAYS" value="14"/>
     </php>
 </phpunit>

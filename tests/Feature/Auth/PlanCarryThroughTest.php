@@ -82,7 +82,7 @@ it('carries a chosen plan from the signup link to the card form', function () {
             ->where('plan.code', 'pro')
             ->where('plan.name', 'Pro')
             // Section 4's fourteen days, quoted on the page that asks for the card.
-            ->where('plan.trial_days', SubscriptionService::TRIAL_DAYS));
+            ->where('plan.trial_days', SubscriptionService::trialLength()));
 
     signUpWith(['plan' => 'pro']);
 
@@ -95,7 +95,7 @@ it('carries a chosen plan from the signup link to the card form', function () {
     expect($gateway->checkouts)->toHaveCount(1)
         ->and($gateway->checkouts[0]['plan_price_id'])->toBe($monthly->id)
         // Section 4: the trial IS this checkout with the first days free.
-        ->and($gateway->checkouts[0]['trial_period_days'])->toBe(SubscriptionService::TRIAL_DAYS);
+        ->and($gateway->checkouts[0]['trial_period_days'])->toBe(SubscriptionService::trialLength());
 });
 
 /*

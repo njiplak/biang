@@ -41,6 +41,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use UnexpectedValueException;
 
 /**
  * OUR subscription state, not a mirror of Dodo's.
@@ -54,17 +55,46 @@ use Illuminate\Support\Str;
 class SubscriptionService implements SubscriptionContract
 {
     /**
-     * Section 4, and section 13 now settles it at 14. Public because the
-     * checkout that COLLECTS the card has to ask for the same number of free
-     * days this service would have granted - two constants would drift into a
-     * trial that ends on a different day than the one we emailed about.
+     * Warnings go out once a day, so a trial started after that run is first
+     * seen with a day fewer left. Below 4 it can skip the 3-day warning.
      */
-    public const TRIAL_DAYS = 14;
+    private const MIN_TRIAL_DAYS = 4;
+
+    /**
+     * The configured trial length, or null when trials are switched off.
+     *
+     * The checkout that COLLECTS the card has to ask for the same number of
+     * free days every page quotes, so this is the one place it is read - two
+     * copies would drift into a trial that ends on a different day than the
+     * one we emailed about.
+     *
+     * Refused rather than coerced: (int) of a typo is 0, which would switch
+     * trials off without anybody having asked for that.
+     */
+    public static function trialLength(): ?int
+    {
+        $configured = config('billing.trial_days');
+        $days = filter_var($configured, FILTER_VALIDATE_INT);
+
+        if ($days === 0) {
+            return null;
+        }
+
+        if ($days === false || $days < self::MIN_TRIAL_DAYS) {
+            throw new UnexpectedValueException(sprintf(
+                'BILLING_TRIAL_DAYS must be 0 (no trial) or a whole number of at least %d, got %s.',
+                self::MIN_TRIAL_DAYS,
+                var_export($configured, true),
+            ));
+        }
+
+        return $days;
+    }
 
     /**
      * How many free days a given price is sold with, or null when it is not
      * sold with a trial at all. The ONE answer to that question - see the note
-     * on TRIAL_DAYS above about two constants drifting apart.
+     * on trialLength() above about two copies drifting apart.
      *
      * Annual deliberately carries none. A trial auto-charges at the end
      * (section 4), and a whole year's fee landing unannounced on day 15 is the
@@ -77,7 +107,7 @@ class SubscriptionService implements SubscriptionContract
     public static function trialDaysFor(PlanPrice $price): ?int
     {
         return $price->billing_interval === BillingInterval::Month
-            ? self::TRIAL_DAYS
+            ? self::trialLength()
             : null;
     }
 

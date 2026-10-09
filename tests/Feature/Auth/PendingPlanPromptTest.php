@@ -50,7 +50,7 @@ it('names the plan and the trial that is still waiting', function () {
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->where('pending_plan.name', $plan->name)
-            ->where('pending_plan.trial_days', SubscriptionService::TRIAL_DAYS));
+            ->where('pending_plan.trial_days', SubscriptionService::trialLength()));
 });
 
 /*

@@ -44,8 +44,8 @@ it('publishes the public plans without a login', function () {
 it('says per price whether it is sold with a trial', function () {
     $this->getJson(route('pricing'))
         ->assertOk()
-        ->assertJsonPath('trial_days', SubscriptionService::TRIAL_DAYS)
-        ->assertJsonPath('plans.1.prices.month.trial_days', SubscriptionService::TRIAL_DAYS)
+        ->assertJsonPath('trial_days', SubscriptionService::trialLength())
+        ->assertJsonPath('plans.1.prices.month.trial_days', SubscriptionService::trialLength())
         ->assertJsonPath('plans.1.prices.year.trial_days', null);
 });
 
